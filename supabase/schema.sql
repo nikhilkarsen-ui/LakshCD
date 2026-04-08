@@ -1,0 +1,69 @@
+-- LAKSH v2 Schema — Run after: DROP TABLE IF EXISTS price_history, trades, positions, players, users CASCADE;
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  email TEXT NOT NULL,
+  display_name TEXT NOT NULL DEFAULT 'Trader',
+  balance DECIMAL(12,2) NOT NULL DEFAULT 10000.00,
+  initial_balance DECIMAL(12,2) NOT NULL DEFAULT 10000.00,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE players (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL, team TEXT NOT NULL, position TEXT NOT NULL DEFAULT 'SF',
+  current_price DECIMAL(10,2) NOT NULL DEFAULT 100.00,
+  previous_price DECIMAL(10,2) NOT NULL DEFAULT 100.00,
+  price_change_24h DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  price_change_pct_24h DECIMAL(8,2) NOT NULL DEFAULT 0.00,
+  expected_value DECIMAL(10,2) NOT NULL DEFAULT 500.00,
+  volatility DECIMAL(8,4) NOT NULL DEFAULT 0.0500,
+  ppg DECIMAL(6,2) NOT NULL DEFAULT 0, apg DECIMAL(6,2) NOT NULL DEFAULT 0,
+  rpg DECIMAL(6,2) NOT NULL DEFAULT 0, efficiency DECIMAL(8,2) NOT NULL DEFAULT 0,
+  games_played INTEGER NOT NULL DEFAULT 0,
+  pool_x DECIMAL(14,4) NOT NULL DEFAULT 10000, pool_y DECIMAL(14,4) NOT NULL DEFAULT 10000,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE positions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  position_size DECIMAL(14,6) NOT NULL DEFAULT 0,
+  avg_entry_price DECIMAL(10,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, player_id)
+);
+
+CREATE TABLE trades (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  size DECIMAL(14,6) NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  pnl DECIMAL(12,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE price_history (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  price DECIMAL(10,2) NOT NULL,
+  expected_value DECIMAL(10,2) NOT NULL DEFAULT 0,
+  volatility DECIMAL(8,4) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_positions_user ON positions(user_id);
+CREATE INDEX idx_trades_user ON trades(user_id, created_at DESC);
+CREATE INDEX idx_ph_player ON price_history(player_id, created_at DESC);
+
+ALTER TABLE users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE players DISABLE ROW LEVEL SECURITY;
+ALTER TABLE positions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE trades DISABLE ROW LEVEL SECURITY;
+ALTER TABLE price_history DISABLE ROW LEVEL SECURITY;

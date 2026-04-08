@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { -webkit-tap-highlight-color: transparent; }
+html { background-color: #0b1120; color-scheme: dark; }
+body { overscroll-behavior: none; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 4px; }
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type='number'] { -moz-appearance: textfield; }
+
+.landing-grid {
+  background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 140px 140px;
+}
+.landing-glow {
+  background: radial-gradient(circle at 20% 20%, rgba(16, 185, 129, 0.18), transparent 28%), radial-gradient(circle at 82% 18%, rgba(56, 189, 248, 0.12), transparent 24%);
+}
+.landing-noise {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 3px 3px;
+  opacity: 0.12;
+}
+.landing-ticker {
+  animation: ticker 20s linear infinite;
+}
+@keyframes ticker {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+.landing-fade-up {
+  transform: translateY(28px);
+  transition: opacity 0.75s ease, transform 0.75s ease;
+}
+.landing-fade-up.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.landing-hero-card {
+  background: rgba(15, 23, 42, 0.72);
+  box-shadow: 0 40px 120px rgba(0, 255, 170, 0.12);
+}
+.landing-glow-btn:hover {
+  box-shadow: 0 0 55px rgba(16, 185, 129, 0.35);
+}
