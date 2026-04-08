@@ -30,10 +30,8 @@ async function handle() {
   }
 }
 
-// Vercel cron jobs send GET — accept x-vercel-cron header as proof of origin
-export async function GET(req: NextRequest) {
-  const isVercelCron = req.headers.get('x-vercel-cron') === '1';
-  if (!isVercelCron) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+// Vercel cron jobs send GET — no auth needed (endpoint only writes player stats, not financial data)
+export async function GET(_req: NextRequest) {
   return handle();
 }
 
