@@ -35,9 +35,16 @@ CREATE TABLE positions (
   player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
   position_size DECIMAL(14,6) NOT NULL DEFAULT 0,
   avg_entry_price DECIMAL(10,2) NOT NULL DEFAULT 0,
+  -- Futures: daily mark-to-market settlement tracking
+  last_settlement_price DECIMAL(10,2) DEFAULT NULL,  -- mark price at last daily MTM
+  last_settlement_date DATE DEFAULT NULL,             -- UTC date of last daily MTM
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(user_id, player_id)
 );
+
+-- Migration for existing databases:
+-- ALTER TABLE positions ADD COLUMN IF NOT EXISTS last_settlement_price DECIMAL(10,2) DEFAULT NULL;
+-- ALTER TABLE positions ADD COLUMN IF NOT EXISTS last_settlement_date DATE DEFAULT NULL;
 
 CREATE TABLE trades (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

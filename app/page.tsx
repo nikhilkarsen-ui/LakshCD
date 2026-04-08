@@ -10,6 +10,7 @@ import PlayerDetail from '@/components/PlayerDetail';
 import PortfolioView from '@/components/PortfolioView';
 import LeaderboardView from '@/components/LeaderboardView';
 import ProfileView from '@/components/ProfileView';
+import AboutView from '@/components/AboutView';
 
 const HERO_FEATURES = [
   { title: 'AMM Pricing', description: 'Token prices move with every trade through an automated market maker.' },
@@ -307,7 +308,8 @@ function Shell() {
         {tab === 'home' && pid && <PlayerDetail playerId={pid} onBack={back}/>}
         {tab === 'portfolio' && <PortfolioView onSelect={selectPlayer}/>}
         {tab === 'leaderboard' && <LeaderboardView/>}
-        {tab === 'profile' && <ProfileView onSignOut={signOut}/>}      
+        {tab === 'profile' && <ProfileView onSignOut={signOut}/>}
+        {tab === 'about' && <AboutView/>}
       </main>
       <BottomNav active={tab} onChange={changeTab}/>
     </div>

@@ -14,10 +14,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const sb = useMemo(() => browserSupa(), []);
+  const sb = useMemo(() => {
+    try {
+      return browserSupa();
+    } catch (error) {
+      console.warn('Supabase client not available during build time');
+      return null;
+    }
+  }, []);
   const created = useRef(false);
 
   useEffect(() => {
+    if (!sb) {
+      setLoading(false);
+      return;
+    }
     sb.auth.getSession().then(({ data: { session: s } }) => { setSession(s); setUser(s?.user ?? null); setLoading(false); });
     const { data: { subscription } } = sb.auth.onAuthStateChange(async (ev, s) => {
       setSession(s); setUser(s?.user ?? null); setLoading(false);
@@ -30,9 +41,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, [sb]);
 
-  const signUp = useCallback(async (e: string, p: string, n: string) => sb.auth.signUp({ email: e, password: p, options: { data: { display_name: n } } }), [sb]);
-  const signIn = useCallback(async (e: string, p: string) => sb.auth.signInWithPassword({ email: e, password: p }), [sb]);
-  const signOut = useCallback(async () => { created.current = false; await sb.auth.signOut(); setUser(null); setSession(null); }, [sb]);
+  const signUp = useCallback(async (e: string, p: string, n: string) => {
+    if (!sb) throw new Error('Supabase client not available');
+    const redirectTo = typeof window !== 'undefined'
+      ? `${window.location.origin}/`
+      : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    return sb.auth.signUp({
+      email: e,
+      password: p,
+      options: {
+        data: { display_name: n },
+        emailRedirectTo: redirectTo
+      }
+    });
+  }, [sb]);
+  const signIn = useCallback(async (e: string, p: string) => {
+    if (!sb) throw new Error('Supabase client not available');
+    return sb.auth.signInWithPassword({ email: e, password: p });
+  }, [sb]);
+  const signOut = useCallback(async () => {
+    if (!sb) return;
+    created.current = false;
+    await sb.auth.signOut();
+    setUser(null);
+    setSession(null);
+  }, [sb]);
 
   const val = useMemo(() => ({ user, session, loading, signUp, signIn, signOut }), [user, session, loading, signUp, signIn, signOut]);
   return React.createElement(Ctx.Provider, { value: val }, children);
@@ -54,7 +87,23 @@ export function usePlayers() {
   const [openInterest, setOpenInterest] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const fetch_ = useCallback(async () => {
-    try { const r = await fetch('/api/players'); const d = await r.json(); setPlayers(d.players || []); setOpenInterest(d.open_interest ?? 0); } catch {} finally { setLoading(false); }
+    try {
+      const r = await fetch('/api/players');
+      if (!r.ok) {
+        console.error(`Players API error: ${r.status} ${r.statusText}`);
+        const errData = await r.json().catch(() => ({}));
+        console.error('Error data:', errData);
+        setLoading(false);
+        return;
+      }
+      const d = await r.json();
+      setPlayers(d.players || []);
+      setOpenInterest(d.open_interest ?? 0);
+    } catch (error) {
+      console.error('Failed to fetch players:', error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
   useEffect(() => { fetch_(); const i = setInterval(fetch_, POLL.prices); return () => clearInterval(i); }, [fetch_]);
   return { players, openInterest, loading, refetch: fetch_ };

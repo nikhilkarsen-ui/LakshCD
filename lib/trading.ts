@@ -254,6 +254,83 @@ export async function executeTrade(userId: string, req: TradeRequest) {
   }
 }
 
+// ============================================================
+// FUTURES: Daily Mark-to-Market
+// Called once per UTC calendar day from the tick route.
+// Variation margin = (mark_price − last_settlement_price) × size
+// flows directly into / out of the user's cash balance.
+// This is the core futures mechanic: P&L is realized daily,
+// not only when the position is closed.
+// ============================================================
+export async function runDailyMTM(): Promise<{ settled_users: number; total_variation_margin: number }> {
+  const db = serverSupa();
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD UTC
+
+  // Only process positions that have not yet been settled today
+  const { data: positions } = await db
+    .from('positions')
+    .select('*, player:players(current_price)')
+    .neq('position_size', 0);
+
+  if (!positions?.length) return { settled_users: 0, total_variation_margin: 0 };
+
+  // Filter to positions not yet settled today
+  const unsettled = positions.filter((p: any) => p.last_settlement_date !== today);
+  if (!unsettled.length) return { settled_users: 0, total_variation_margin: 0 };
+
+  // Group by user
+  const byUser: Record<string, any[]> = {};
+  for (const p of unsettled) {
+    const size = normalizePosition(Number(p.position_size));
+    if (size === 0) continue;
+    if (!byUser[p.user_id]) byUser[p.user_id] = [];
+    byUser[p.user_id].push({ ...p, position_size: size });
+  }
+
+  let settledUsers = 0;
+  let totalVariationMargin = 0;
+
+  for (const [uid, poss] of Object.entries(byUser)) {
+    const { data: u } = await db.from('users').select('balance').eq('id', uid).single();
+    if (!u) continue;
+    let variationMargin = 0;
+
+    for (const p of poss) {
+      const size = p.position_size as number;
+      const markPrice = Number(p.player?.current_price || 0);
+      // Use last_settlement_price if set, otherwise fall back to avg_entry_price (first day)
+      const prevSettle = p.last_settlement_price !== null
+        ? Number(p.last_settlement_price)
+        : Number(p.avg_entry_price);
+
+      const dailyPnl = (markPrice - prevSettle) * size;
+      variationMargin += dailyPnl;
+
+      // Advance settlement price to today's mark
+      await db.from('positions').update({
+        last_settlement_price: parseFloat(markPrice.toFixed(2)),
+        last_settlement_date: today,
+        updated_at: new Date().toISOString(),
+      }).eq('id', p.id);
+    }
+
+    // Credit / debit variation margin to cash balance (never below 0)
+    if (Math.abs(variationMargin) > 0.005) {
+      const newBal = Math.max(0, parseFloat((Number(u.balance) + variationMargin).toFixed(2)));
+      await db.from('users').update({
+        balance: newBal,
+        updated_at: new Date().toISOString(),
+      }).eq('id', uid);
+    }
+
+    totalVariationMargin += variationMargin;
+    settledUsers++;
+  }
+
+  console.log(`DAILY MTM: ${settledUsers} users, variation margin flow: $${totalVariationMargin.toFixed(2)}`);
+  return { settled_users: settledUsers, total_variation_margin: totalVariationMargin };
+}
+
 // Force-close all open positions at current price.
 // Called by the tick route at/after settlement_date. Idempotent — safe to call multiple times.
 export async function runSettlement() {

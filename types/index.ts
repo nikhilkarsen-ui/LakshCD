@@ -8,13 +8,16 @@ export interface Player {
   is_active: boolean; created_at: string; updated_at: string;
 }
 
-// Single position model: position_size positive=long, negative=short
+// Single position model: position_size positive=long (buy), negative=short (sell)
+// Futures: tracks last daily settlement for mark-to-market variation margin
 export interface Position {
   id: string;
   user_id: string;
   player_id: string;
-  position_size: number;    // +ve = long, -ve = short
+  position_size: number;          // +ve = buy/long, -ve = sell/short
   avg_entry_price: number;
+  last_settlement_price: number | null;  // mark price at last daily MTM (null = not settled yet)
+  last_settlement_date: string | null;   // UTC date of last daily MTM
   created_at: string;
   updated_at: string;
   player?: Player;
@@ -60,7 +63,9 @@ export interface MarginInfo {
 export interface PortfolioData {
   total_value: number;
   cash_balance: number;
-  positions_value: number;
+  locked_margin: number;
+  positions_value: number;  // total unrealized P&L since entry across all positions
+  daily_pnl: number;        // today's aggregate variation margin
   total_pnl: number;
   total_pnl_pct: number;
   margin: MarginInfo;
@@ -70,8 +75,10 @@ export interface PortfolioData {
 export interface EnrichedPosition extends Position {
   current_price: number;
   notional: number;
-  pnl: number;
+  pnl: number;            // total unrealized P&L since entry
   pnl_pct: number;
+  daily_pnl: number;      // today's mark-to-market P&L (variation margin)
+  daily_pnl_pct: number;
   side: 'buy' | 'sell';
   liq_price: number;
   locked_margin: number;

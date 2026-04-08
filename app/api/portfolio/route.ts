@@ -1,8 +1,19 @@
 // ============================================================
-// Bug #12 fix: total_value = cash + locked_margin + unrealized_pnl
-// Cash is already reduced by locked margin, so:
-// total_value = cash + sum(notional * margin_rate) + sum(unrealized_pnl)
-//             = cash + sum(margin_held_per_position + pnl_per_position)
+// Futures portfolio accounting
+//
+// After daily MTM, variation margin has already flowed into
+// the cash balance. So total_value uses INTRADAY unrealized P&L
+// (current − last_settlement) rather than the full open P&L:
+//
+//   total_value = cash                        (includes all past MTM flows)
+//               + locked_margin_at_entry      (50% of notional at entry price)
+//               + intraday_pnl               (current − last_settlement × size)
+//
+// This equals the pre-MTM formula when last_settlement = avg_entry,
+// so it's backwards-compatible for new positions.
+//
+// total_pnl (display) still shows full P&L since entry:
+//   (current − avg_entry) × size
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -28,42 +39,48 @@ export async function GET(req: NextRequest) {
 
   const positions = (rawPositions || []).filter((p: any) => Math.abs(Number(p.position_size)) > 0.0001);
 
-  // Enrich positions
-  let totalUnrealizedPnl = 0;
+  let totalIntradayPnl = 0;   // (current − last_settlement) × size — for total_value
   let totalLockedMargin = 0;
+  let totalPnlSinceEntry = 0; // (current − avg_entry) × size — for display
 
   const enriched = positions.map((p: any) => {
     const size = Number(p.position_size);
     const avg = Number(p.avg_entry_price);
     const curPrice = Number(p.player?.current_price || 0);
     const notional = Math.abs(size) * curPrice;
-    const pnl = (curPrice - avg) * size; // long: profit when price up. short: profit when price down.
+
+    // Full P&L since entry (for display)
+    const pnlSinceEntry = (curPrice - avg) * size;
     const costBasis = Math.abs(size) * avg;
-    const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+    const pnlPct = costBasis > 0 ? (pnlSinceEntry / costBasis) * 100 : 0;
+
+    // Intraday P&L since last daily settlement (for total_value formula)
+    const lastSettle = p.last_settlement_price !== null ? Number(p.last_settlement_price) : avg;
+    const intradayPnl = (curPrice - lastSettle) * size;
+    const dailyPnlPct = (Math.abs(lastSettle) * Math.abs(size)) > 0
+      ? (intradayPnl / (Math.abs(lastSettle) * Math.abs(size))) * 100
+      : 0;
+
     const isLong = size > 0;
-    // lockedMargin for DISPLAY uses current notional (mark-to-market requirement shown to user)
+    // lockedMargin for DISPLAY: current notional × margin rate
     const lockedMargin = notional * MARGIN.initial;
-    // lockedAtEntry is what was actually deducted from balance when the position was opened;
-    // used for totalValue so it correctly equals initial - fees + realizedPnl + unrealizedPnl
+    // lockedAtEntry: what was actually deducted when position was opened
     const lockedAtEntry = Math.abs(size) * avg * MARGIN.initial;
 
-    totalUnrealizedPnl += pnl;
+    totalIntradayPnl += intradayPnl;
     totalLockedMargin += lockedAtEntry;
+    totalPnlSinceEntry += pnlSinceEntry;
 
-    // Liquidation price: when does equity (cash) fall to maintenance_margin for all positions
-    // Simplified per-position estimate
+    // Liquidation price estimate (single-position simplified)
     const maintMargin = notional * MARGIN.maintenance;
     let liqPrice: number;
     if (isLong) {
-      // Price drop reduces P&L, balance doesn't change (P&L is unrealized)
-      // Liquidation when: balance + (liqP - curP) * size = maintenance_margin_total
-      // For single position: liqP = curP - (balance - maintMargin) / size
       liqPrice = Math.max(0, curPrice - (balance - maintMargin) / Math.abs(size));
     } else {
       liqPrice = curPrice + (balance - maintMargin) / Math.abs(size);
     }
 
-    // Coerce player fields
+    // Coerce player numeric fields
     const player = p.player;
     if (player) {
       for (const f of ['current_price', 'previous_price', 'price_change_24h', 'price_change_pct_24h', 'expected_value', 'volatility', 'ppg', 'apg', 'rpg', 'efficiency']) {
@@ -73,11 +90,15 @@ export async function GET(req: NextRequest) {
 
     return {
       ...p,
-      position_size: size, avg_entry_price: avg,
+      position_size: size,
+      avg_entry_price: avg,
+      last_settlement_price: p.last_settlement_price !== null ? Number(p.last_settlement_price) : null,
       current_price: curPrice,
       notional: parseFloat(notional.toFixed(2)),
-      pnl: parseFloat(pnl.toFixed(2)),
+      pnl: parseFloat(pnlSinceEntry.toFixed(2)),
       pnl_pct: parseFloat(pnlPct.toFixed(2)),
+      daily_pnl: parseFloat(intradayPnl.toFixed(2)),
+      daily_pnl_pct: parseFloat(dailyPnlPct.toFixed(2)),
       side: isLong ? 'buy' : 'sell',
       liq_price: parseFloat(Math.max(0, liqPrice).toFixed(2)),
       locked_margin: parseFloat(lockedMargin.toFixed(2)),
@@ -85,21 +106,21 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  // Margin status
+  // Margin status uses equity = cash balance
   const marginPositions = positions.map((p: any) => ({
     size: Number(p.position_size),
     price: Number(p.player?.current_price || 0),
   }));
   const margin = calcMargin(balance, marginPositions);
 
-  // --- Bug #12 fix: total portfolio value ---
-  // cash (already reduced by locked margin) + locked margin back + unrealized P&L
-  // = what the user would have if they closed everything right now
-  const totalValue = balance + totalLockedMargin + totalUnrealizedPnl;
+  // Total portfolio value: cash (includes all settled MTM flows)
+  //   + locked_margin_at_entry (what was originally deducted for margin)
+  //   + intraday unrealized P&L (since last daily settlement)
+  const totalValue = balance + totalLockedMargin + totalIntradayPnl;
   const totalPnl = totalValue - initial;
   const totalPnlPct = initial > 0 ? (totalPnl / initial) * 100 : 0;
 
-  // Trades
+  // Trades history
   const { data: trades } = await db.from('trades')
     .select('*, player:players(id, name, team)')
     .eq('user_id', authUser.id)
@@ -118,7 +139,8 @@ export async function GET(req: NextRequest) {
       total_value: parseFloat(totalValue.toFixed(2)),
       cash_balance: balance,
       locked_margin: parseFloat(totalLockedMargin.toFixed(2)),
-      positions_value: parseFloat(totalUnrealizedPnl.toFixed(2)),
+      positions_value: parseFloat(totalPnlSinceEntry.toFixed(2)),  // total unrealized P&L since entry
+      daily_pnl: parseFloat(totalIntradayPnl.toFixed(2)),           // today's variation margin
       total_pnl: parseFloat(totalPnl.toFixed(2)),
       total_pnl_pct: parseFloat(totalPnlPct.toFixed(2)),
       margin,

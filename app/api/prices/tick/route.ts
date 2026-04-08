@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { serverSupa } from '@/lib/supabase';
 import { tick } from '@/lib/pricing';
-import { checkLiquidations, runSettlement } from '@/lib/trading';
+import { checkLiquidations, runSettlement, runDailyMTM } from '@/lib/trading';
 import { getUser } from '@/lib/auth';
 import { Player, PricePoint } from '@/types';
 import { SEASON } from '@/config/constants';
@@ -107,13 +107,23 @@ export async function POST(req: NextRequest) {
 
     if (inserts.length) await db.from('price_history').insert(inserts);
 
+    // Daily mark-to-market: run once per UTC calendar day.
+    // Variation margin (daily P&L) flows into/out of each user's cash balance.
+    const mtmResult = await runDailyMTM();
+
     const liquidated = await checkLiquidations();
 
     // Prune history older than 7 days
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     await db.from('price_history').delete().lt('created_at', cutoff);
 
-    return NextResponse.json({ success: true, ticks: players.length, liquidations: liquidated.length, timestamp: now });
+    return NextResponse.json({
+      success: true,
+      ticks: players.length,
+      liquidations: liquidated.length,
+      daily_mtm: { users: mtmResult.settled_users, variation_margin: mtmResult.total_variation_margin },
+      timestamp: now,
+    });
   } catch (e: any) {
     console.error('Tick error:', e);
     return NextResponse.json({ error: e.message }, { status: 500 });
