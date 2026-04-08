@@ -26,8 +26,15 @@ CREATE TABLE players (
   games_played INTEGER NOT NULL DEFAULT 0,
   pool_x DECIMAL(14,4) NOT NULL DEFAULT 10000, pool_y DECIMAL(14,4) NOT NULL DEFAULT 10000,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  -- BallDontLie integration
+  bdl_player_id INTEGER DEFAULT NULL,       -- numeric ID from api.balldontlie.io
+  stats_synced_at TIMESTAMPTZ DEFAULT NULL, -- when stats were last fetched from BDL
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migration for existing databases:
+-- ALTER TABLE players ADD COLUMN IF NOT EXISTS bdl_player_id INTEGER DEFAULT NULL;
+-- ALTER TABLE players ADD COLUMN IF NOT EXISTS stats_synced_at TIMESTAMPTZ DEFAULT NULL;
 
 CREATE TABLE positions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

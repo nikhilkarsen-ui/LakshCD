@@ -3,6 +3,10 @@
     {
       "path": "/api/prices/tick",
       "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/stats/sync",
+      "schedule": "0 6 * * *"
     }
   ]
 }
