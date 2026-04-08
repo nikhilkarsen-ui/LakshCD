@@ -74,6 +74,7 @@ export interface EnrichedPosition extends Position {
   pnl_pct: number;
   side: 'buy' | 'sell';
   liq_price: number;
+  locked_margin: number;
 }
 
 export interface TradeRequest {
