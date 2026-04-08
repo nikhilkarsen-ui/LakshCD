@@ -1,37 +1,19 @@
 // ============================================================
-// POST /api/stats/sync
+// GET  /api/stats/sync  — called by Vercel cron (GET)
+// POST /api/stats/sync  — called manually with Bearer token
 //
-// Fetches live NBA season averages from BallDontLie and writes
-// ppg, apg, rpg, efficiency, games_played into the players table.
-// The pricing engine's computeEV() reads those fields directly,
-// so the next price tick immediately uses real stats.
-//
-// Auth: x-cron-secret header (Vercel cron) OR user Bearer token.
-// Called daily by vercel.json cron schedule.
-//
-// Two-phase behavior:
-//   1. Players without bdl_player_id get a name-search lookup
-//      (one-time per player, rate-limited by BDL_SEARCH_DELAY_MS).
-//   2. All players with known IDs get a single batched stats fetch.
-//
-// Returns: { success, updated, mapped, skipped, errors, timestamp }
+// Auth:
+//   GET  — Vercel automatically adds x-vercel-cron:1 to cron requests
+//   POST — requires valid user Bearer token
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getUser } from '@/lib/auth';
 import { syncStats } from '@/lib/stats';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // seconds — needed for initial ID-mapping phase
+export const maxDuration = 60;
 
-export async function POST(req: NextRequest) {
-  // Auth: cron secret or valid user JWT
-  const cronSecret = req.headers.get('x-cron-secret');
-  const validCron = !!process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET;
-  if (!validCron) {
-    const user = await getUser(req);
-    if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
-
+async function handle() {
   try {
     const result = await syncStats();
     return NextResponse.json({
@@ -46,4 +28,18 @@ export async function POST(req: NextRequest) {
     console.error('Stats sync error:', e);
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
+}
+
+// Vercel cron jobs send GET — accept x-vercel-cron header as proof of origin
+export async function GET(req: NextRequest) {
+  const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+  if (!isVercelCron) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  return handle();
+}
+
+// Manual trigger via Bearer token (browser console, curl, etc.)
+export async function POST(req: NextRequest) {
+  const user = await getUser(req);
+  if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  return handle();
 }
