@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     user: {
-      id: user.id, email: user.email, display_name: user.display_name,
+      id: authUser.id, email: authUser.email, display_name: authUser.display_name,
       balance, initial_balance: initial,
     },
     portfolio: {
