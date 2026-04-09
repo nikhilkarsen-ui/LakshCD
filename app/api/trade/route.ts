@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUser, unauth } from '@/lib/auth';
+import { getApprovedAppUser, unauth } from '@/lib/auth';
 import { executeTrade } from '@/lib/trading';
 
 export async function POST(req: NextRequest) {
-  const user = await getUser(req);
+  const user = await getApprovedAppUser(req);
   if (!user) return unauth();
   const body = await req.json();
   const dollars = Number(body.dollars);

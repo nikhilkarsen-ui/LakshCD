@@ -1,8 +1,10 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { AuthProvider, useAuth, usePlayers, usePriceTicker, usePortfolio, useCountdown } from '@/hooks';
 import { Player } from '@/types';
 import AuthForm from '@/components/AuthForm';
+import WaitlistForm from '@/components/WaitlistForm';
 import Header from '@/components/Header';
 import BottomNav from '@/components/BottomNav';
 import HomeView from '@/components/HomeView';
@@ -120,6 +122,12 @@ function LandingPage({ onStart }: { onStart: () => void }) {
               <div className="flex flex-wrap gap-4">
                 <button onClick={onStart} className="rounded-full bg-lk-accent px-7 py-3 text-sm font-semibold text-black transition hover:brightness-110">Create Your Account</button>
                 <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="rounded-full border border-white/10 bg-white/5 px-7 py-3 text-sm text-white transition hover:bg-white/10">Explore Player Prices</button>
+              </div>
+
+              <div className="mt-8 rounded-3xl border border-white/10 bg-black/40 p-6 shadow-xl shadow-black/10">
+                <p className="text-sm uppercase tracking-[0.35em] text-lk-accent">Join the beta waitlist</p>
+                <p className="mt-3 text-sm text-lk-text">Submit your email and we’ll email you when beta spots open.</p>
+                <WaitlistForm />
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -266,13 +274,54 @@ function LandingPage({ onStart }: { onStart: () => void }) {
 }
 
 function Shell() {
-  const { user, loading: authLoading, signIn, signUp, signOut } = useAuth();
+  const { user, session, loading: authLoading, signIn, signUp, signOut } = useAuth();
+  const [approvalState, setApprovalState] = useState<'unknown' | 'approved' | 'pending' | 'error'>('unknown');
+  const router = useRouter();
   const { players, openInterest, loading: pLoading } = usePlayers();
   const { portfolio } = usePortfolio();
   const [tab, setTab] = useState('home');
   const [pid, setPid] = useState<string | null>(null);
   const [view, setView] = useState<'landing' | 'auth'>('landing');
   usePriceTicker();
+
+  useEffect(() => {
+    if (!user || !session?.access_token) {
+      setApprovalState('unknown');
+      return;
+    }
+
+    let active = true;
+    const checkApproval = async () => {
+      setApprovalState('unknown');
+
+      try {
+        const res = await fetch('/api/check-approval', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const data = await res.json();
+
+        if (!active) return;
+        if (!res.ok) {
+          setApprovalState('error');
+          return;
+        }
+
+        if (data.approved) {
+          setApprovalState('approved');
+          return;
+        }
+
+        setApprovalState('pending');
+        router.push('/pending');
+      } catch (error) {
+        if (!active) return;
+        setApprovalState('error');
+      }
+    };
+
+    checkApproval();
+    return () => { active = false; };
+  }, [user, session?.access_token, router]);
 
   const selectPlayer = useCallback((p: Player) => { setPid(p.id); setTab('home'); }, []);
   const back = useCallback(() => setPid(null), []);
@@ -281,6 +330,12 @@ function Shell() {
   const backToLanding = useCallback(() => setView('landing'), []);
 
   if (authLoading) return (
+    <div className="min-h-screen bg-lk-bg flex items-center justify-center">
+      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-lk-accent to-emerald-500 flex items-center justify-center mx-auto animate-pulse text-lk-bg font-extrabold text-lg">L</div>
+    </div>
+  );
+
+  if (user && approvalState === 'unknown') return (
     <div className="min-h-screen bg-lk-bg flex items-center justify-center">
       <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-lk-accent to-emerald-500 flex items-center justify-center mx-auto animate-pulse text-lk-bg font-extrabold text-lg">L</div>
     </div>

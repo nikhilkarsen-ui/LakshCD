@@ -41,24 +41,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, [sb]);
 
+  const checkApproval = useCallback(async (token: string) => {
+    try {
+      const res = await fetch('/api/check-approval', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return { approved: false, status: 'pending' };
+      return await res.json();
+    } catch {
+      return { approved: false, status: 'pending' };
+    }
+  }, []);
+
   const signUp = useCallback(async (e: string, p: string, n: string) => {
     if (!sb) throw new Error('Supabase client not available');
     const redirectTo = typeof window !== 'undefined'
       ? `${window.location.origin}/`
       : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    return sb.auth.signUp({
+
+    const response = await sb.auth.signUp({
       email: e,
       password: p,
       options: {
         data: { display_name: n },
-        emailRedirectTo: redirectTo
-      }
+        emailRedirectTo: redirectTo,
+      },
     });
-  }, [sb]);
+
+    if (response.error || !response.data.session?.access_token) return response;
+    const approval = await checkApproval(response.data.session.access_token);
+    if (!approval.approved) {
+      return { error: new Error('Your account is not approved for the beta yet.') } as any;
+    }
+    return response;
+  }, [sb, checkApproval]);
+
   const signIn = useCallback(async (e: string, p: string) => {
     if (!sb) throw new Error('Supabase client not available');
-    return sb.auth.signInWithPassword({ email: e, password: p });
-  }, [sb]);
+
+    const response = await sb.auth.signInWithPassword({ email: e, password: p });
+    if (response.error || !response.data.session?.access_token) return response;
+
+    const approval = await checkApproval(response.data.session.access_token);
+    if (!approval.approved) {
+      return { error: new Error('Your account is not approved for the beta yet.') } as any;
+    }
+    return response;
+  }, [sb, checkApproval]);
   const signOut = useCallback(async () => {
     if (!sb) return;
     created.current = false;

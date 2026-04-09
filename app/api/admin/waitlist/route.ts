@@ -1,0 +1,77 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getUser, unauth } from '@/lib/auth';
+import { serverSupa } from '@/lib/supabase';
+
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
+  .split(',')
+  .map(email => email.trim().toLowerCase())
+  .filter(Boolean);
+
+function isAdmin(email?: string) {
+  return !!email && ADMIN_EMAILS.includes(email.toLowerCase());
+}
+
+export async function GET(req: NextRequest) {
+  const authUser = await getUser(req);
+  if (!authUser?.email || !isAdmin(authUser.email)) return unauth();
+
+  const db = serverSupa();
+  const { data, error } = await db
+    .from('waitlist')
+    .select('id,email,status,created_at,approved_at,notes')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Admin waitlist fetch failed:', error);
+    return NextResponse.json({ error: 'Unable to load waitlist.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ entries: data });
+}
+
+export async function PATCH(req: NextRequest) {
+  const authUser = await getUser(req);
+  if (!authUser?.email || !isAdmin(authUser.email)) return unauth();
+
+  const body = await req.json();
+  const id = typeof body.id === 'string' ? body.id : '';
+  const action = body.action === 'approve' ? 'approved' : body.action === 'reject' ? 'rejected' : '';
+
+  if (!id || !action) {
+    return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
+  }
+
+  const db = serverSupa();
+  const { data: waitlistRow, error: lookupError } = await db
+    .from('waitlist')
+    .select('id,email')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (lookupError) {
+    console.error('Admin waitlist lookup failed:', lookupError);
+    return NextResponse.json({ error: 'Unable to update waitlist entry.' }, { status: 500 });
+  }
+
+  if (!waitlistRow) {
+    return NextResponse.json({ error: 'Waitlist entry not found.' }, { status: 404 });
+  }
+
+  const approvedAt = action === 'approved' ? new Date().toISOString() : null;
+  const { error: updateError } = await db
+    .from('waitlist')
+    .update({ status: action, approved_at: approvedAt })
+    .eq('id', id);
+
+  if (updateError) {
+    console.error('Admin waitlist update failed:', updateError);
+    return NextResponse.json({ error: 'Unable to update waitlist entry.' }, { status: 500 });
+  }
+
+  await db
+    .from('users')
+    .update({ is_approved: action === 'approved', approved_at: approvedAt })
+    .eq('email', waitlistRow.email);
+
+  return NextResponse.json({ success: true });
+}

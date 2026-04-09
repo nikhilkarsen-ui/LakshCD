@@ -17,21 +17,19 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getUser, unauth } from '@/lib/auth';
+import { getApprovedAppUser, unauth } from '@/lib/auth';
 import { serverSupa } from '@/lib/supabase';
 import { calcMargin } from '@/lib/trading';
 import { MARGIN } from '@/config/constants';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const authUser = await getUser(req);
+  const authUser = await getApprovedAppUser(req);
   if (!authUser) return unauth();
   const db = serverSupa();
 
-  const { data: user } = await db.from('users').select('*').eq('id', authUser.id).single();
-  if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-  const balance = Number(user.balance);
-  const initial = Number(user.initial_balance);
+  const balance = Number(authUser.balance);
+  const initial = Number(authUser.initial_balance);
 
   const { data: rawPositions, error: posErr } = await db
     .from('positions').select('*, player:players(*)').eq('user_id', authUser.id);
