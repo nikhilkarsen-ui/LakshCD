@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/hooks';
 
+export const dynamic = 'force-dynamic';
+
 type WaitlistEntry = {
   id: string;
   email: string;
