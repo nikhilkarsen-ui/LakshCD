@@ -31,6 +31,18 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
     }
   };
 
+  const doSellAll = async () => {
+    if (!player || !hasPosition) return;
+    const result = await execute(player.id, 0, 'sell', true);
+    if (result.success) {
+      setToast({ msg: `Sold all ${player.name} shares`, type: 'ok' });
+      setDollars('');
+      refetch();
+    } else {
+      setToast({ msg: result.error || 'Sell all failed', type: 'err' });
+    }
+  };
+
   if (!player) return (
     <div className="p-4 space-y-3">
       <Skel className="h-10 w-40" /><Skel className="h-48 w-full" /><Skel className="h-32 w-full" />
@@ -239,11 +251,11 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
             ))}
           </div>
 
-          {/* Max sell shortcut */}
+          {/* Sell all shortcut — uses exact share count server-side */}
           {hasPosition && (
-            <button onClick={() => setDollars(maxSellDollars.toFixed(2))}
-              className="w-full mb-3 py-2 rounded-lg border border-lk-border text-lk-dim text-xs hover:border-lk-muted transition-colors font-medium">
-              Sell all ({sharesOwned.toFixed(4)} shares ≈ {fmt(maxSellDollars)})
+            <button onClick={doSellAll} disabled={executing}
+              className="w-full mb-3 py-2 rounded-lg border border-lk-red/30 text-lk-red text-xs hover:bg-lk-red/5 transition-colors font-medium disabled:opacity-40">
+              {executing ? '...' : `Sell all ${sharesOwned.toFixed(4)} shares ≈ ${fmt(maxSellDollars)}`}
             </button>
           )}
 

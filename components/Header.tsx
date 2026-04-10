@@ -1,14 +1,15 @@
 'use client';
 import { fmt } from './ui';
+import LakshLogo from './LakshLogo';
 
 export default function Header({ balance, onSignOut }: { balance: number; onSignOut: () => void }) {
   return (
     <header className="flex items-center justify-between px-5 py-4 border-b border-lk-border bg-lk-bg/95 backdrop-blur-xl sticky top-0 z-50">
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-lk-accent to-emerald-500 flex items-center justify-center text-lk-bg font-extrabold text-base">L</div>
+        <LakshLogo className="w-9 h-9" />
         <div>
           <div className="text-lg font-bold tracking-wider text-lk-text">Laksh</div>
-          <div className="text-[9px] text-lk-dim tracking-[3px] uppercase -mt-0.5">The 24/7 Sports Exchange</div>
+          <div className="text-[9px] text-lk-dim tracking-[3px] uppercase -mt-0.5">The 24/7 Sports Market</div>
         </div>
       </div>
       <div className="flex items-center gap-4">

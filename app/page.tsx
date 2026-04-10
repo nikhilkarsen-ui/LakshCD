@@ -6,6 +6,7 @@ import { Player } from '@/types';
 import AuthForm from '@/components/AuthForm';
 import WaitlistForm from '@/components/WaitlistForm';
 import Header from '@/components/Header';
+import LakshLogo from '@/components/LakshLogo';
 import BottomNav from '@/components/BottomNav';
 import HomeView from '@/components/HomeView';
 import PlayerDetail from '@/components/PlayerDetail';
@@ -14,16 +15,57 @@ import LeaderboardView from '@/components/LeaderboardView';
 import ProfileView from '@/components/ProfileView';
 import AboutView from '@/components/AboutView';
 
-const HERO_FEATURES = [
-  { title: 'AMM Pricing', description: 'Player share prices move with every trade through an automated market maker.' },
-  { title: 'Buy & Sell', description: 'Buy shares to go long on a player. Sell any shares you own back to the market.' },
-  { title: 'No Margin Required', description: 'Spend only what you have. No leverage, no borrowing, no margin calls.' },
-  { title: 'Real-Time P&L', description: 'Track your unrealized and realized gains across all holdings live.' },
-  { title: 'Leaderboard', description: 'Rank against other traders by portfolio return. Climb the board.' },
-  { title: 'Season Settlement', description: 'All remaining shares settle automatically at the player\'s final season price.' },
+const SETTLEMENT_DATE = '2026-06-15T00:00:00Z';
+
+const HOW_IT_WORKS = [
+  {
+    step: '1',
+    title: 'Browse the market',
+    desc: 'Every NBA player has a live share price — the market\'s current estimate of their final season value.',
+  },
+  {
+    step: '2',
+    title: 'Buy shares',
+    desc: 'Spend virtual cash to buy shares in a player. Price moves up with every buy.',
+  },
+  {
+    step: '3',
+    title: 'Sell anytime',
+    desc: 'Sell any shares you own back to the market. Price moves down with every sell. You can only sell what you own.',
+  },
+  {
+    step: '4',
+    title: 'Settle at season end',
+    desc: 'On June 15, 2026, all remaining shares are automatically converted to cash at each player\'s final settlement price.',
+  },
 ];
 
-const TICKER_SYMBOLS = ['LAL', 'BKN', 'GSW', 'MIL', 'BOS', 'PHX', 'MIA', 'OKC'];
+const FEATURES = [
+  {
+    title: 'Live share prices',
+    desc: 'Every player has a real-time price that updates every 5 seconds, driven by trading activity and season performance.',
+  },
+  {
+    title: 'Buy & sell freely',
+    desc: 'Buy shares in any player. Sell back any shares you own. No restrictions beyond what you can afford.',
+  },
+  {
+    title: 'Season settlement',
+    desc: 'The season ends June 15, 2026. All remaining shares settle automatically at the final price — no action needed.',
+  },
+  {
+    title: 'Stat-driven prices',
+    desc: 'Prices drift toward each player\'s expected final value, which updates as the season stats come in.',
+  },
+  {
+    title: 'Track your P&L',
+    desc: 'See unrealized gains on shares you hold, and realized gains locked in from past sells.',
+  },
+  {
+    title: 'Leaderboard',
+    desc: 'Compete against other traders. Rankings are based on total portfolio return since the season started.',
+  },
+];
 
 function useScrollReveal() {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -33,7 +75,7 @@ function useScrollReveal() {
       entries.forEach(entry => {
         if (entry.isIntersecting) { entry.target.classList.add('visible'); obs.unobserve(entry.target); }
       });
-    }, { threshold: 0.15 });
+    }, { threshold: 0.12 });
     observer.observe(ref.current);
     return () => observer.disconnect();
   }, []);
@@ -48,7 +90,7 @@ function Reveal({ children, className = '' }: { children: React.ReactNode; class
 function LandingPage({ onStart }: { onStart: () => void }) {
   const [navScrolled, setNavScrolled] = useState(false);
   const { players } = usePlayers();
-  const countdown = useCountdown('2026-06-15T00:00:00Z');
+  const countdown = useCountdown(SETTLEMENT_DATE);
 
   useEffect(() => {
     const onScroll = () => setNavScrolled(window.scrollY > 24);
@@ -59,13 +101,20 @@ function LandingPage({ onStart }: { onStart: () => void }) {
 
   const tickerItems = useMemo(() => {
     if (!players?.length) {
-      return TICKER_SYMBOLS.map((symbol, idx) => ({ symbol, price: 18.5 + idx * 1.2, change: idx % 2 === 0 ? 0.9 : -0.6 }));
+      return ['LAL','GSW','MIL','BOS','OKC','DEN'].map((sym, i) => ({
+        name: sym, price: 245 + i * 18, change: i % 2 === 0 ? 2.4 : -1.1,
+      }));
     }
-    return players.slice(0, 6).map(player => ({ symbol: player.team, price: player.current_price, change: player.price_change_pct_24h }));
+    return players.slice(0, 8).map(p => ({
+      name: p.name.split(' ').pop()!,
+      price: p.current_price,
+      change: p.price_change_pct_24h,
+    }));
   }, [players]);
 
   return (
     <div className="relative overflow-hidden min-h-screen bg-lk-bg text-white">
+      {/* Background effects */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 landing-grid" />
         <div className="absolute inset-0 landing-glow" />
@@ -73,188 +122,242 @@ function LandingPage({ onStart }: { onStart: () => void }) {
       </div>
 
       <div className="relative z-10">
-        <header className={`sticky top-0 z-30 transition duration-300 ${navScrolled ? 'backdrop-blur-xl bg-black/30 border-b border-white/10 shadow-black/20' : 'bg-transparent'}`}>
+        {/* Nav */}
+        <header className={`sticky top-0 z-30 transition duration-300 ${navScrolled ? 'backdrop-blur-xl bg-black/30 border-b border-white/10' : 'bg-transparent'}`}>
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-lk-accent to-emerald-500 text-black font-bold">L</div>
+              <LakshLogo className="w-10 h-10" />
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-lk-accent/90">Laksh</p>
-                <p className="text-xs text-lk-dim">The 24/7 Player Share Market</p>
+                <span className="text-sm font-semibold uppercase tracking-[0.22em] text-lk-accent/90">Laksh</span>
+                <p className="text-[10px] text-lk-dim leading-none mt-0.5">The 24/7 sports market</p>
               </div>
             </div>
-            <button onClick={onStart} className="rounded-full bg-lk-accent px-5 py-3 text-sm font-semibold text-black transition hover:brightness-110">Sign In</button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => document.getElementById('waitlist')?.scrollIntoView({ behavior: 'smooth' })}
+                className="rounded-full border border-white/12 bg-white/5 px-4 py-2.5 text-sm text-white transition hover:bg-white/10">
+                Join Waitlist
+              </button>
+              <button onClick={onStart} className="rounded-full bg-lk-accent px-5 py-2.5 text-sm font-semibold text-black transition hover:brightness-110">
+                Sign In
+              </button>
+            </div>
           </div>
         </header>
 
-        <section className="border-t border-white/5 bg-black/5">
-          <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-hidden px-6 py-3 text-sm text-lk-text">
-            <div className="flex min-w-max items-center gap-3">
-              <span className="rounded-full bg-lk-accent/10 px-3 py-1 text-lk-accent">Live Ticker</span>
-              <span>Prices update every 5s.</span>
-            </div>
-            <div className="relative flex h-8 min-w-[14rem] overflow-hidden rounded-full bg-white/5 px-2">
-              <div className="landing-ticker flex min-w-full gap-4 whitespace-nowrap text-xs font-medium text-lk-text">
-                {tickerItems.concat(tickerItems).map((item, index) => (
-                  <div key={`${item.symbol}-${index}`} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                    <span className="font-semibold">{item.symbol}</span>
-                    <span>${item.price.toFixed(2)}</span>
-                    <span className={`${item.change >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{item.change >= 0 ? '+' : ''}{item.change.toFixed(2)}%</span>
-                  </div>
-                ))}
+        {/* Live ticker */}
+        <div className="border-y border-white/5 bg-black/10 py-2.5 overflow-hidden">
+          <div className="landing-ticker flex gap-5 whitespace-nowrap text-xs">
+            {[...tickerItems, ...tickerItems].map((item, i) => (
+              <div key={i} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/8 flex-shrink-0">
+                <span className="font-semibold text-white">{item.name}</span>
+                <span className="text-lk-dim">${item.price.toFixed(2)}</span>
+                <span className={item.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                  {item.change >= 0 ? '+' : ''}{item.change.toFixed(2)}%
+                </span>
               </div>
-            </div>
+            ))}
           </div>
-        </section>
+        </div>
 
-        <main className="mx-auto max-w-7xl px-6 py-20 lg:py-24">
-          <div className="grid gap-14 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-            <div className="space-y-8">
-              <div className="inline-flex items-center gap-2 rounded-full border border-lk-accent/20 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.32em] text-lk-accent shadow-lg shadow-lk-accent/5">Season settlement: June 15, 2026</div>
-              <div className="space-y-6">
-                <p className="text-sm uppercase tracking-[0.4em] text-emerald-300/90">Fantasy player share market</p>
-                <h1 className="text-5xl font-black tracking-tight text-white sm:text-6xl lg:text-7xl">Trade player <span className="bg-gradient-to-r from-emerald-300 via-cyan-200 to-sky-400 bg-clip-text text-transparent">shares</span></h1>
-                <p className="max-w-2xl text-lg leading-8 text-lk-dim">Speculate on NBA player performance. Buy shares when you're bullish, sell when you're not. Prices reflect the market's best estimate of each player's final season value.</p>
-              </div>
+        <main className="mx-auto max-w-7xl px-6">
 
-              <div className="flex flex-wrap gap-4">
-                <button onClick={onStart} className="rounded-full bg-lk-accent px-7 py-3 text-sm font-semibold text-black transition hover:brightness-110">Sign In</button>
-                <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="rounded-full border border-white/10 bg-white/5 px-7 py-3 text-sm text-white transition hover:bg-white/10">Explore Player Prices</button>
-              </div>
+          {/* ── Hero ── */}
+          <section className="py-24 lg:py-32">
+            <div className="grid gap-16 lg:grid-cols-[1fr_420px] lg:items-center">
 
-              <div className="mt-8 rounded-3xl border border-white/10 bg-black/40 p-6 shadow-xl shadow-black/10">
-                <p className="text-sm uppercase tracking-[0.35em] text-lk-accent">Join the beta waitlist</p>
-                <p className="mt-3 text-sm text-lk-text">Submit your email and we'll email you when beta spots open.</p>
-                <WaitlistForm />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-                  <p className="text-sm uppercase tracking-[0.3em] text-lk-dim">Starting Cash</p>
-                  <p className="mt-3 text-3xl font-semibold text-white">$10,000</p>
-                  <p className="mt-2 text-sm text-lk-muted">Every trader starts with $10K in virtual cash to invest.</p>
+              <div className="space-y-8 max-w-2xl">
+                {/* Settlement badge */}
+                <div className="inline-flex items-center gap-2.5 rounded-full border border-lk-accent/25 bg-lk-accent/5 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-lk-accent">
+                  <span className="h-1.5 w-1.5 rounded-full bg-lk-accent animate-pulse" />
+                  Season settles June 15, 2026
                 </div>
-                <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-                  <p className="text-sm uppercase tracking-[0.3em] text-lk-dim">Updates</p>
-                  <p className="mt-3 text-3xl font-semibold text-white">Every 5s</p>
-                  <p className="mt-2 text-sm text-lk-muted">Prices refresh automatically and drift toward expected final value.</p>
+
+                <h1 className="text-5xl font-black tracking-tight sm:text-6xl lg:text-[4.5rem] leading-[1.05]">
+                  Trade the<br />
+                  <span className="bg-gradient-to-r from-emerald-300 via-cyan-200 to-sky-400 bg-clip-text text-transparent">
+                    future of sports
+                  </span>
+                </h1>
+
+                <p className="text-lg leading-8 text-lk-dim">
+                  Each NBA player has a share price — the market's live estimate of their final season value.
+                  Buy shares you believe in. Sell when you're ready. Everything settles automatically at season end.
+                </p>
+
+                <div className="flex flex-wrap gap-3">
+                  <button onClick={onStart} className="rounded-full bg-lk-accent px-7 py-3.5 text-sm font-semibold text-black transition hover:brightness-110">
+                    Start Trading
+                  </button>
+                  <button
+                    onClick={() => document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' })}
+                    className="rounded-full border border-white/12 bg-white/5 px-7 py-3.5 text-sm text-white transition hover:bg-white/10">
+                    How it works
+                  </button>
+                </div>
+
+                {/* Countdown */}
+                <div className="flex items-center gap-4 pt-2">
+                  <div className="h-px flex-1 bg-white/8" />
+                  <div className="text-center">
+                    <div className="text-[10px] uppercase tracking-[0.3em] text-lk-dim mb-1">Time to settlement</div>
+                    <div className="font-mono text-sm font-semibold text-lk-accent">{countdown}</div>
+                  </div>
+                  <div className="h-px flex-1 bg-white/8" />
                 </div>
               </div>
-            </div>
 
-            <div className="relative">
-              <div className="landing-hero-card relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/5 p-8 shadow-2xl shadow-lk-accent/15">
-                <div className="absolute -left-10 -top-10 h-32 w-32 rounded-full bg-emerald-400/10 blur-3xl" />
-                <div className="relative z-10 space-y-5">
-                  <div className="flex items-center justify-between gap-4">
+              {/* Hero card — mock player */}
+              <div className="relative">
+                <div className="absolute -inset-4 rounded-[2.5rem] bg-lk-accent/5 blur-2xl" />
+                <div className="relative rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 space-y-4 backdrop-blur-sm">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.35em] text-lk-dim">Mock player</p>
-                      <h2 className="mt-2 text-xl font-semibold">Ja Morant</h2>
+                      <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Player</div>
+                      <div className="font-bold text-lg">Ja Morant</div>
+                      <div className="text-xs text-lk-dim">PG · Memphis Grizzlies</div>
                     </div>
-                    <div className="rounded-2xl bg-black/50 px-3 py-2 text-xs text-lk-text">PG · MEM</div>
+                    <div className="text-right">
+                      <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Share Price</div>
+                      <div className="text-2xl font-bold">$245.30</div>
+                      <div className="text-xs text-emerald-400 font-medium">↗ +4.6% today</div>
+                    </div>
                   </div>
 
-                  <div className="rounded-3xl bg-black/40 p-5 text-white shadow-lg shadow-black/10">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.3em] text-lk-dim">Share Price</p>
-                        <p className="mt-3 text-3xl font-semibold">$245.30</p>
+                  {/* Mini chart */}
+                  <div className="h-24 rounded-2xl bg-black/30 overflow-hidden">
+                    <svg viewBox="0 0 300 96" className="w-full h-full" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#00d4aa" stopOpacity="0.3" />
+                          <stop offset="100%" stopColor="#00d4aa" stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      <path d="M0 72 C30 68 60 60 90 62 C120 64 150 52 180 44 C210 36 240 28 300 18" fill="none" stroke="#00d4aa" strokeWidth="2.5" strokeLinecap="round"/>
+                      <path d="M0 72 C30 68 60 60 90 62 C120 64 150 52 180 44 C210 36 240 28 300 18 L300 96 L0 96Z" fill="url(#cg)"/>
+                    </svg>
+                  </div>
+
+                  {/* Stats row */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {[{ l: 'PPG', v: '24.8' }, { l: 'APG', v: '8.1' }, { l: 'EFF', v: '23.9' }].map(s => (
+                      <div key={s.l} className="rounded-xl bg-black/30 p-3 text-center">
+                        <div className="text-[10px] text-lk-dim">{s.l}</div>
+                        <div className="text-sm font-bold text-white mt-0.5">{s.v}</div>
                       </div>
-                      <div className="rounded-3xl bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-300">+4.6%</div>
-                    </div>
-                    <div className="mt-6 h-40 overflow-hidden rounded-[1.5rem] bg-gradient-to-b from-emerald-500/10 to-transparent">
-                      <svg viewBox="0 0 240 120" className="h-full w-full">
-                        <path d="M0 96 C40 77 80 62 120 72 C160 82 200 44 240 36" fill="none" stroke="url(#heroChart)" strokeWidth="4" strokeLinecap="round" />
-                        <defs>
-                          <linearGradient id="heroChart" x1="0" y1="0" x2="1" y2="0">
-                            <stop offset="0%" stopColor="#34d399" />
-                            <stop offset="100%" stopColor="#06b6d4" />
-                          </linearGradient>
-                        </defs>
-                      </svg>
-                    </div>
+                    ))}
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-3xl bg-black/40 p-4 text-xs text-lk-dim"><p>PPG</p><p className="mt-2 text-sm text-white">24.8</p></div>
-                    <div className="rounded-3xl bg-black/40 p-4 text-xs text-lk-dim"><p>APG</p><p className="mt-2 text-sm text-white">8.1</p></div>
-                    <div className="rounded-3xl bg-black/40 p-4 text-xs text-lk-dim"><p>EFF</p><p className="mt-2 text-sm text-white">23.9</p></div>
+                  {/* Mock trade buttons */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-lk-accent/15 border border-lk-accent/20 py-3 text-center text-sm font-semibold text-lk-accent">↗ Buy</div>
+                    <div className="rounded-xl bg-lk-red/10 border border-lk-red/20 py-3 text-center text-sm font-semibold text-lk-red">↘ Sell</div>
+                  </div>
+
+                  <div className="text-[11px] text-lk-muted text-center">
+                    Expected final value: <span className="text-lk-accent font-medium">$238.50</span> · Settles Jun 15, 2026
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          </section>
 
-          <section id="features" className="mt-24">
-            <div className="mx-auto max-w-2xl text-center">
-              <p className="text-sm uppercase tracking-[0.4em] text-lk-accent/90">How Laksh works</p>
-              <h2 className="mt-4 text-4xl font-bold text-white">A prediction market for NBA season outcomes.</h2>
+          {/* ── How it works ── */}
+          <section id="how" className="py-20 border-t border-white/5">
+            <div className="max-w-xl mb-12">
+              <p className="text-xs uppercase tracking-[0.4em] text-lk-accent mb-3">How it works</p>
+              <h2 className="text-3xl font-bold">Simple from start to settlement.</h2>
             </div>
-
-            <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-              {HERO_FEATURES.map(feature => (
-                <Reveal key={feature.title} className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl shadow-xl shadow-black/10">
-                  <p className="text-sm font-semibold uppercase tracking-[0.3em] text-lk-accent">{feature.title}</p>
-                  <p className="mt-4 text-sm leading-6 text-lk-text">{feature.description}</p>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {HOW_IT_WORKS.map((s, i) => (
+                <Reveal key={s.step} className="rounded-2xl border border-white/8 bg-white/[0.03] p-6">
+                  <div className="text-3xl font-black text-white/10 mb-4 leading-none">{String(i + 1).padStart(2, '0')}</div>
+                  <div className="font-semibold text-sm mb-2">{s.title}</div>
+                  <div className="text-xs leading-relaxed text-lk-dim">{s.desc}</div>
                 </Reveal>
               ))}
             </div>
           </section>
 
-          <section className="mt-24 grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
-            <div className="rounded-[2rem] border border-white/10 bg-white/5 p-8 shadow-2xl shadow-black/10">
-              <p className="text-sm uppercase tracking-[0.35em] text-lk-accent">How it works</p>
-              <div className="mt-8 grid gap-5 sm:grid-cols-2">
-                {[
-                  { step: '1', title: 'Browse players', desc: 'Pick NBA players and see share prices driven by AMM supply and demand.' },
-                  { step: '2', title: 'Buy shares', desc: 'Spend virtual cash to buy shares. Price reflects the expected final season value.' },
-                  { step: '3', title: 'Track holdings', desc: 'Monitor market value, unrealized P&L, and realized gains from past sells.' },
-                  { step: '4', title: 'Season settlement', desc: 'All remaining shares auto-settle at the final price when the season ends.' },
-                ].map(item => (
-                  <div key={item.step} className="rounded-3xl border border-white/10 bg-black/20 p-5">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/5 text-lg font-semibold text-white">{item.step}</div>
-                    <p className="mt-4 font-semibold text-white">{item.title}</p>
-                    <p className="mt-2 text-sm leading-6 text-lk-muted">{item.desc}</p>
-                  </div>
-                ))}
+          {/* ── Settlement callout ── */}
+          <Reveal className="my-4">
+            <div className="rounded-[2rem] border border-emerald-500/20 bg-emerald-500/[0.04] p-10 grid gap-8 md:grid-cols-[1fr_auto] items-center">
+              <div>
+                <p className="text-xs uppercase tracking-[0.4em] text-emerald-400 mb-3">Season settlement</p>
+                <h3 className="text-2xl font-bold mb-3">Everything settles on June 15, 2026.</h3>
+                <p className="text-sm leading-7 text-lk-dim max-w-lg">
+                  At season end, all remaining share holdings are automatically converted to cash at each player's final settlement price.
+                  You don't need to do anything — just hold through settlement if you believe in a player.
+                </p>
+              </div>
+              <div className="text-center min-w-[160px]">
+                <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-2">Countdown</div>
+                <div className="font-mono text-xl font-bold text-emerald-300">{countdown}</div>
               </div>
             </div>
+          </Reveal>
 
-            <div className="rounded-[2rem] border border-emerald-500/20 bg-emerald-500/5 p-8 shadow-[0_30px_80px_-45px_rgba(16,185,129,0.35)]">
-              <p className="text-sm uppercase tracking-[0.35em] text-emerald-200">Settlement date</p>
-              <h3 className="mt-4 text-3xl font-semibold text-white">June 15, 2026</h3>
-              <p className="mt-4 text-sm leading-6 text-lk-dim">All remaining share holdings are automatically settled at each player's final value when the season ends.</p>
-              <div className="mt-8 rounded-3xl bg-black/20 px-5 py-4">
-                <p className="text-xs uppercase tracking-[0.35em] text-lk-dim">Countdown to settlement</p>
-                <p className="mt-3 text-2xl font-semibold text-white">{countdown}</p>
-              </div>
+          {/* ── Features grid ── */}
+          <section className="py-20 border-t border-white/5">
+            <div className="max-w-xl mb-12">
+              <p className="text-xs uppercase tracking-[0.4em] text-lk-accent mb-3">Platform</p>
+              <h2 className="text-3xl font-bold">Everything you need to trade the season.</h2>
             </div>
-          </section>
-
-          <section className="mt-24">
-            <div className="grid gap-4 sm:grid-cols-4">
-              {[
-                { label: 'Players', value: '15' },
-                { label: 'Starting Cash', value: '$10K' },
-                { label: 'No Margin', value: '0%' },
-                { label: 'Updates', value: '5s' },
-              ].map(item => (
-                <div key={item.label} className="rounded-3xl border border-white/10 bg-white/5 p-6 text-center">
-                  <p className="text-sm uppercase tracking-[0.3em] text-lk-dim">{item.label}</p>
-                  <p className="mt-3 text-3xl font-semibold text-white">{item.value}</p>
-                </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {FEATURES.map(f => (
+                <Reveal key={f.title} className="rounded-2xl border border-white/8 bg-white/[0.03] p-6">
+                  <div className="font-semibold text-sm mb-2 text-lk-accent">{f.title}</div>
+                  <div className="text-xs leading-relaxed text-lk-dim">{f.desc}</div>
+                </Reveal>
               ))}
             </div>
           </section>
 
-          <section className="mt-24 rounded-[2rem] border border-white/10 bg-white/5 p-12 text-center shadow-2xl shadow-black/20">
-            <p className="text-sm uppercase tracking-[0.35em] text-lk-accent">Ready to trade?</p>
-            <h2 className="mt-5 text-4xl font-black leading-tight text-white">Buy and sell player shares. Settle at season end.</h2>
-            <button onClick={onStart} className="landing-glow-btn mt-10 inline-flex rounded-full bg-lk-accent px-9 py-4 text-sm font-semibold text-black transition hover:brightness-110">Sign In</button>
+          {/* ── Stats bar ── */}
+          <Reveal className="mb-20">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Players', value: '15' },
+                { label: 'Starting Cash', value: '$10,000' },
+                { label: 'Price Updates', value: 'Every 5s' },
+                { label: 'Settlement', value: 'Jun 15 \'26' },
+              ].map(s => (
+                <div key={s.label} className="rounded-2xl border border-white/8 bg-white/[0.03] p-5 text-center">
+                  <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-2">{s.label}</div>
+                  <div className="text-2xl font-bold text-white">{s.value}</div>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          {/* ── Waitlist + CTA ── */}
+          <section className="py-20 border-t border-white/5">
+            <div className="grid gap-10 lg:grid-cols-2 items-center">
+              <div>
+                <p className="text-xs uppercase tracking-[0.4em] text-lk-accent mb-3">Beta access</p>
+                <h2 className="text-3xl font-bold mb-4">Join the waitlist.</h2>
+                <p className="text-sm leading-7 text-lk-dim">
+                  Laksh is in private beta. Drop your email and we'll let you in when spots open.
+                  Everyone starts with $10,000 in virtual cash.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+                <WaitlistForm />
+              </div>
+            </div>
+          </section>
+
+          {/* ── CTA ── */}
+          <section className="py-20 border-t border-white/5 text-center">
+            <h2 className="text-4xl font-black mb-4">Ready to trade?</h2>
+            <p className="text-lk-dim text-sm mb-8">Sign in and start buying player shares. Settlement is June 15, 2026.</p>
+            <button onClick={onStart} className="landing-glow-btn inline-flex rounded-full bg-lk-accent px-10 py-4 text-sm font-semibold text-black transition hover:brightness-110">
+              Sign In
+            </button>
           </section>
         </main>
 
-        <footer className="border-t border-white/10 bg-black/5 py-8 text-center text-xs text-lk-muted">
-          Simulated positions are for educational and entertainment purposes only. Not financial advice.
+        <footer className="border-t border-white/8 py-8 text-center text-xs text-lk-muted">
+          Simulated trading for entertainment purposes only. All cash is virtual. Not financial advice.
         </footer>
       </div>
     </div>
@@ -299,13 +402,13 @@ function Shell() {
 
   if (authLoading) return (
     <div className="min-h-screen bg-lk-bg flex items-center justify-center">
-      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-lk-accent to-emerald-500 flex items-center justify-center mx-auto animate-pulse text-lk-bg font-extrabold text-lg">L</div>
+      <LakshLogo className="w-12 h-12 mx-auto animate-pulse" />
     </div>
   );
 
   if (user && approvalState === 'unknown') return (
     <div className="min-h-screen bg-lk-bg flex items-center justify-center">
-      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-lk-accent to-emerald-500 flex items-center justify-center mx-auto animate-pulse text-lk-bg font-extrabold text-lg">L</div>
+      <LakshLogo className="w-12 h-12 mx-auto animate-pulse" />
     </div>
   );
 
@@ -325,18 +428,18 @@ function Shell() {
 
   return (
     <div className="min-h-screen bg-lk-bg">
-      <Header balance={balance} onSignOut={signOut}/>
+      <Header balance={balance} onSignOut={signOut} />
       <main className="max-w-lg mx-auto pb-24">
-        {tab === 'home' && !pid && <HomeView players={players} marketCap={marketCap} loading={pLoading} onSelect={selectPlayer}/>}
-        {tab === 'home' && pid && <PlayerDetail playerId={pid} onBack={back}/>}
-        {tab === 'portfolio' && <PortfolioView onSelect={selectPlayer}/>}
-        {tab === 'leaderboard' && <LeaderboardView/>}
-        {tab === 'profile' && <ProfileView onSignOut={signOut}/>}
-        {tab === 'about' && <AboutView/>}
+        {tab === 'home' && !pid && <HomeView players={players} marketCap={marketCap} loading={pLoading} onSelect={selectPlayer} />}
+        {tab === 'home' && pid && <PlayerDetail playerId={pid} onBack={back} />}
+        {tab === 'portfolio' && <PortfolioView onSelect={selectPlayer} />}
+        {tab === 'leaderboard' && <LeaderboardView />}
+        {tab === 'profile' && <ProfileView onSignOut={signOut} />}
+        {tab === 'about' && <AboutView />}
       </main>
-      <BottomNav active={tab} onChange={changeTab}/>
+      <BottomNav active={tab} onChange={changeTab} />
     </div>
   );
 }
 
-export default function Page() { return <AuthProvider><Shell/></AuthProvider>; }
+export default function Page() { return <AuthProvider><Shell /></AuthProvider>; }

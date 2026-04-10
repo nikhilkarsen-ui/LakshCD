@@ -9,12 +9,16 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const dollars = Number(body.dollars);
   const side = body.side as 'buy' | 'sell';
+  const sell_all = body.sell_all === true;
 
-  if (!body.player_id || isNaN(dollars) || dollars <= 0 || (side !== 'buy' && side !== 'sell')) {
-    return NextResponse.json({ error: 'Need player_id, positive dollars, and side (buy|sell)' }, { status: 400 });
+  if (!body.player_id || (side !== 'buy' && side !== 'sell')) {
+    return NextResponse.json({ error: 'Need player_id and side (buy|sell)' }, { status: 400 });
+  }
+  if (!sell_all && (isNaN(dollars) || dollars <= 0)) {
+    return NextResponse.json({ error: 'Need positive dollars (or sell_all: true)' }, { status: 400 });
   }
 
-  const result = await executeTrade(user.id, { player_id: body.player_id, side, dollars });
+  const result = await executeTrade(user.id, { player_id: body.player_id, side, dollars: dollars || 0, sell_all });
   if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result);
 }

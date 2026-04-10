@@ -164,35 +164,67 @@ async function executeSell(userId: string, req: TradeRequest) {
 
   if (sharesOwned <= 0) return { success: false, error: 'You have no shares in this player to sell' };
 
-  // 5. Validate amount
-  const dollars = req.dollars;
-  if (dollars < TRADE.min_amount) return { success: false, error: `Min trade $${TRADE.min_amount}` };
-  const fee = dollars * TRADE.fee_rate;
-  const netDollars = dollars - fee;
+  // 5. Determine exact shares to sell
+  let actualSold: number;
+  let effPrice: number;
+  let usdOut: number;
+  let proceeds: number;
+  let ammNewX: number;
+  let ammNewY: number;
 
-  // 6. AMM impact — returns qty = tokensIn (shares to sell)
-  const amm = computeAMMImpact(poolX, poolY, netDollars, 'sell');
-  const sharesToSell = snap(amm.qty);
+  if (req.sell_all) {
+    // Sell exact shares_owned — bypass dollar→shares rounding entirely
+    actualSold = sharesOwned;
+    if (actualSold <= 0) return { success: false, error: 'You have no shares to sell' };
+    // AMM: tokens flow in, USD flows out. Start from exact token count.
+    const k = poolX * poolY;
+    if (k <= 0) {
+      effPrice = spot;
+      usdOut = actualSold * spot;
+      ammNewX = poolX + actualSold;
+      ammNewY = poolY;
+    } else {
+      const nX = poolX + actualSold;
+      const nY = k / nX;
+      usdOut = poolY - nY;
+      effPrice = usdOut / actualSold;
+      ammNewX = nX;
+      ammNewY = nY;
+    }
+    const fee = usdOut * TRADE.fee_rate;
+    proceeds = parseFloat((usdOut - fee).toFixed(2));
+  } else {
+    const dollars = req.dollars;
+    if (dollars < TRADE.min_amount) return { success: false, error: `Min trade $${TRADE.min_amount}` };
+    const fee = dollars * TRADE.fee_rate;
+    const netDollars = dollars - fee;
 
-  if (sharesToSell <= 0) return { success: false, error: 'Trade amount too small' };
+    // AMM impact — returns qty = tokensIn (shares to sell)
+    const amm = computeAMMImpact(poolX, poolY, netDollars, 'sell');
+    const sharesToSell = snap(amm.qty);
 
-  // 7. Ownership check — cannot sell more than owned
-  if (sharesToSell > sharesOwned + EPSILON) {
-    const maxSellDollars = sharesOwned * spot;
-    return {
-      success: false,
-      error: `Insufficient shares. You own ${sharesOwned.toFixed(4)} shares (≈$${maxSellDollars.toFixed(2)} at current price). Reduce sell amount.`,
-    };
+    if (sharesToSell <= 0) return { success: false, error: 'Trade amount too small' };
+
+    // Ownership check — cannot sell more than owned
+    if (sharesToSell > sharesOwned + EPSILON) {
+      const maxSellDollars = sharesOwned * spot;
+      return {
+        success: false,
+        error: `Insufficient shares. You own ${sharesOwned.toFixed(4)} shares (≈$${maxSellDollars.toFixed(2)} at current price). Reduce sell amount.`,
+      };
+    }
+
+    if (amm.slippage > TRADE.max_slippage) {
+      return { success: false, error: `Slippage too high (${(amm.slippage * 100).toFixed(1)}%)` };
+    }
+
+    actualSold = Math.min(sharesToSell, sharesOwned);
+    effPrice = amm.effectivePrice;
+    usdOut = effPrice * actualSold;
+    proceeds = parseFloat((usdOut - fee).toFixed(2));
+    ammNewX = amm.newX;
+    ammNewY = amm.newY;
   }
-
-  if (amm.slippage > TRADE.max_slippage) {
-    return { success: false, error: `Slippage too high (${(amm.slippage * 100).toFixed(1)}%)` };
-  }
-
-  const actualSold = Math.min(sharesToSell, sharesOwned);
-  const effPrice = amm.effectivePrice;
-  const usdOut = effPrice * actualSold;
-  const proceeds = parseFloat((usdOut - fee).toFixed(2));
 
   // 8. Realized P&L
   const realizedPnl = parseFloat(((effPrice - avgCost) * actualSold).toFixed(2));
@@ -229,13 +261,13 @@ async function executeSell(userId: string, req: TradeRequest) {
   }).select().single();
 
   // 12. Sync AMM pools and current_price
-  const newSpot = amm.newX > 0 ? parseFloat((amm.newY / amm.newX).toFixed(2)) : Number(player.current_price);
+  const newSpot = ammNewX > 0 ? parseFloat((ammNewY / ammNewX).toFixed(2)) : Number(player.current_price);
   await db.from('players').update({
-    pool_x: parseFloat(amm.newX.toFixed(4)), pool_y: parseFloat(amm.newY.toFixed(4)),
+    pool_x: parseFloat(ammNewX.toFixed(4)), pool_y: parseFloat(ammNewY.toFixed(4)),
     current_price: newSpot, updated_at: new Date().toISOString(),
   }).eq('id', req.player_id);
 
-  console.log(`SELL user=${userId} shares=${actualSold.toFixed(6)} effPrice=${effPrice.toFixed(2)} pnl=${realizedPnl.toFixed(2)} newBal=${newBal}`);
+  console.log(`SELL${req.sell_all ? ' ALL' : ''} user=${userId} shares=${actualSold.toFixed(6)} effPrice=${effPrice.toFixed(2)} pnl=${realizedPnl.toFixed(2)} newBal=${newBal}`);
   return { success: true, trade, new_balance: newBal, realized_pnl: realizedPnl };
 }
 

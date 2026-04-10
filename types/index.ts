@@ -79,6 +79,7 @@ export interface TradeRequest {
   player_id: string;
   side: 'buy' | 'sell';
   dollars: number;  // positive dollar amount (notional for sell, spend for buy)
+  sell_all?: boolean; // if true, sell exact shares_owned regardless of dollars
 }
 
 export type ChartRange = '1D' | '1W' | '1M' | '3M' | 'ALL';

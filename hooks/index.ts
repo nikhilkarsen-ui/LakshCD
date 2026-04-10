@@ -175,7 +175,7 @@ export function useLeaderboard() {
 export function useTrade() {
   const [executing, setExecuting] = useState(false);
   const tokenRef = useTokenRef();
-  const exec = useCallback(async (playerId: string, dollars: number, side: 'buy' | 'sell') => {
+  const exec = useCallback(async (playerId: string, dollars: number, side: 'buy' | 'sell', sellAll = false) => {
     const token = tokenRef.current;
     if (!token) return { success: false, error: 'Not authenticated' };
     setExecuting(true);
@@ -183,7 +183,7 @@ export function useTrade() {
       const r = await fetch('/api/trade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ player_id: playerId, dollars, side }),
+        body: JSON.stringify({ player_id: playerId, dollars, side, sell_all: sellAll }),
       });
       const d = await r.json();
       if (!r.ok) return { success: false, error: d.error };
