@@ -41,17 +41,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch { return { approved: false, status: 'pending' }; }
   }, []);
 
+  const checkWaitlistApproval = useCallback(async (email: string) => {
+    try {
+      const res = await fetch('/api/waitlist/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      return await res.json();
+    } catch {
+      return { approved: false, status: 'pending' };
+    }
+  }, []);
+
   const signUp = useCallback(async (e: string, p: string, n: string) => {
     if (!sb) throw new Error('Supabase client not available');
+    const approval = await checkWaitlistApproval(e);
+    if (!approval.approved) {
+      return { error: new Error('You are not approved yet for the beta.') } as any;
+    }
+
     const redirectTo = typeof window !== 'undefined'
       ? `${window.location.origin}/`
       : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    const response = await sb.auth.signUp({ email: e, password: p, options: { data: { display_name: n }, emailRedirectTo: redirectTo } });
-    if (response.error || !response.data.session?.access_token) return response;
-    const approval = await checkApproval(response.data.session.access_token);
-    if (!approval.approved) return { error: new Error('Your account is not approved for the beta yet.') } as any;
-    return response;
-  }, [sb, checkApproval]);
+
+    return await sb.auth.signUp({ email: e, password: p, options: { data: { display_name: n }, emailRedirectTo: redirectTo } });
+  }, [sb, checkWaitlistApproval]);
 
   const signIn = useCallback(async (e: string, p: string) => {
     if (!sb) throw new Error('Supabase client not available');

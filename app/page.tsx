@@ -339,7 +339,7 @@ function LandingPage({ onStart }: { onStart: () => void }) {
 }
 
 function Shell() {
-  const { user, session, loading: authLoading, signIn, signOut } = useAuth();
+  const { user, session, loading: authLoading, signIn, signUp, signOut } = useAuth();
   const [approvalState, setApprovalState] = useState<'unknown' | 'approved' | 'pending' | 'error'>('unknown');
   const router = useRouter();
   const { players, marketCap, loading: pLoading } = usePlayers();
@@ -391,7 +391,7 @@ function Shell() {
       return (
         <div className="relative min-h-screen bg-lk-bg px-6 py-8 sm:px-10">
           <button onClick={backToLanding} className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white transition hover:bg-white/10">← Back</button>
-          <AuthForm onSignIn={signIn} />
+          <AuthForm onSignIn={signIn} onSignUp={signUp} />
         </div>
       );
     }

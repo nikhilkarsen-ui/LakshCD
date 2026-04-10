@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await db
     .from('waitlist')
     .select('id,email,status,created_at,approved_at,notes')
+    .neq('status', 'rejected')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -63,14 +64,22 @@ export async function PATCH(req: NextRequest) {
   }
 
   const approvedAt = action === 'approved' ? new Date().toISOString() : null;
-  const { error: updateError } = await db
-    .from('waitlist')
-    .update({ status: action, approved_at: approvedAt })
-    .eq('id', id);
+  if (action === 'rejected') {
+    const { error: deleteError } = await db.from('waitlist').delete().eq('id', id);
+    if (deleteError) {
+      console.error('Admin waitlist delete failed:', deleteError);
+      return NextResponse.json({ error: 'Unable to remove waitlist entry.' }, { status: 500 });
+    }
+  } else {
+    const { error: updateError } = await db
+      .from('waitlist')
+      .update({ status: action, approved_at: approvedAt })
+      .eq('id', id);
 
-  if (updateError) {
-    console.error('Admin waitlist update failed:', updateError);
-    return NextResponse.json({ error: 'Unable to update waitlist entry.' }, { status: 500 });
+    if (updateError) {
+      console.error('Admin waitlist update failed:', updateError);
+      return NextResponse.json({ error: 'Unable to update waitlist entry.' }, { status: 500 });
+    }
   }
 
   const { error: userUpdateError } = await db

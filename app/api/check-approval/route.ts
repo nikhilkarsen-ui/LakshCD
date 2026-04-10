@@ -31,9 +31,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unable to verify approval.' }, { status: 500 });
   }
 
-  if (!appUser) {
-    return NextResponse.json({ approved: false, status: 'pending' });
+  if (appUser) {
+    return NextResponse.json({ approved: !!appUser.is_approved, status: appUser.is_approved ? 'approved' : 'pending' });
   }
 
-  return NextResponse.json({ approved: !!appUser.is_approved, status: appUser.is_approved ? 'approved' : 'pending' });
+  const { data: waitlistRow, error: waitlistError } = await db
+    .from('waitlist')
+    .select('status')
+    .eq('email', authUser.email)
+    .maybeSingle();
+
+  if (waitlistError) {
+    console.error('Waitlist lookup error:', waitlistError);
+    return NextResponse.json({ error: 'Unable to verify approval.' }, { status: 500 });
+  }
+
+  if (waitlistRow?.status === 'approved') {
+    return NextResponse.json({ approved: true, status: 'approved' });
+  }
+
+  return NextResponse.json({ approved: false, status: 'pending' });
 }
