@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { serverSupa } from '@/lib/supabase';
 import { TRADE } from '@/config/constants';
 
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
+  .split(',')
+  .map(email => email.trim().toLowerCase())
+  .filter(Boolean);
+
+function isAdminEmail(email?: string) {
+  return !!email && ADMIN_EMAILS.includes(email.toLowerCase());
+}
+
 export async function POST(req: NextRequest) {
   const { user_id, email, display_name } = await req.json();
   if (!user_id || !email) return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
@@ -18,8 +27,8 @@ export async function POST(req: NextRequest) {
     .eq('email', normalizedEmail)
     .maybeSingle();
 
-  const is_approved = waitlistRow?.status === 'approved';
-  const approved_at = is_approved ? waitlistRow.approved_at ?? new Date().toISOString() : null;
+  const is_approved = isAdminEmail(normalizedEmail) || waitlistRow?.status === 'approved';
+  const approved_at = is_approved ? waitlistRow?.approved_at ?? new Date().toISOString() : null;
 
   const { error } = await db.from('users').insert({
     id: user_id,

@@ -9,7 +9,6 @@ export default function PendingPage() {
         <p className="mt-4 text-sm leading-6 text-lk-text">We’ll email you as soon as your access is ready.</p>
         <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
           <Link href="/" className="inline-flex rounded-full bg-lk-accent px-7 py-3 text-sm font-semibold text-black transition hover:brightness-110">Back to home</Link>
-          <Link href="/admin/waitlist" className="inline-flex rounded-full border border-white/10 bg-white/5 px-7 py-3 text-sm text-white transition hover:bg-white/10">Admin waitlist</Link>
         </div>
       </div>
     </div>

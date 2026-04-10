@@ -14,7 +14,9 @@ function isAdmin(email?: string) {
 
 export async function GET(req: NextRequest) {
   const authUser = await getUser(req);
-  if (!authUser?.email || !isAdmin(authUser.email)) return unauth();
+  if (!authUser?.email || !isAdmin(authUser.email)) {
+    return NextResponse.json({ error: 'Admin access required.' }, { status: 401 });
+  }
 
   const db = serverSupa();
   const { data, error } = await db
@@ -32,7 +34,9 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   const authUser = await getUser(req);
-  if (!authUser?.email || !isAdmin(authUser.email)) return unauth();
+  if (!authUser?.email || !isAdmin(authUser.email)) {
+    return NextResponse.json({ error: 'Admin access required.' }, { status: 401 });
+  }
 
   const body = await req.json();
   const id = typeof body.id === 'string' ? body.id : '';

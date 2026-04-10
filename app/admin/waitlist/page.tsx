@@ -34,8 +34,12 @@ export default function AdminWaitlistPage() {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       const data = (await res.json()) as ApiResponse;
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'Unable to load waitlist.');
+      if (!res.ok) {
+        const message = data.error || (res.status === 401 ? 'You do not have admin access.' : 'Unable to load waitlist.');
+        throw new Error(message);
+      }
+      if (data.error) {
+        throw new Error(data.error);
       }
       setEntries(data.entries || []);
     } catch (err: any) {
