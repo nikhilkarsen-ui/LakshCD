@@ -1,0 +1,20 @@
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100" height="100" rx="22" fill="#0b1120"/>
+  <defs>
+    <linearGradient id="lk-g" x1="50" y1="14" x2="50" y2="86" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#6ee7b7"/>
+      <stop offset="45%"  stop-color="#2dd4bf"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+  <!-- Left petal -->
+  <path d="M 28 26 L 10 60 L 32 68 L 41 52" stroke="url(#lk-g)" stroke-width="4.2" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Right petal -->
+  <path d="M 72 26 L 90 60 L 68 68 L 59 52" stroke="url(#lk-g)" stroke-width="4.2" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Center shield -->
+  <path d="M 50 13 L 41 52 L 50 62 L 59 52 Z" stroke="url(#lk-g)" stroke-width="4.2" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Inner arc -->
+  <path d="M 32 68 Q 41 58 50 62 Q 59 58 68 68" stroke="url(#lk-g)" stroke-width="4.2" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Diamond -->
+  <path d="M 50 62 L 43 71 L 50 80 L 57 71 Z" stroke="url(#lk-g)" stroke-width="3.8" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

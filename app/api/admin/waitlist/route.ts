@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUser, unauth } from '@/lib/auth';
 import { serverSupa } from '@/lib/supabase';
+import { sendApprovalNotification } from '@/lib/email';
 
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
   .split(',')
@@ -68,10 +69,22 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Unable to update waitlist entry.' }, { status: 500 });
   }
 
-  await db
+  const { error: userUpdateError } = await db
     .from('users')
     .update({ is_approved: action === 'approved', approved_at: approvedAt })
     .eq('email', waitlistRow.email);
+
+  if (userUpdateError) {
+    console.error('User approval update failed:', userUpdateError);
+  }
+
+  if (action === 'approved') {
+    try {
+      await sendApprovalNotification(waitlistRow.email);
+    } catch (emailError) {
+      console.error('Approval notification email failed:', emailError);
+    }
+  }
 
   return NextResponse.json({ success: true });
 }
