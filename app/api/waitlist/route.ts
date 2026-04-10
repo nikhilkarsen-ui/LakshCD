@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { serverSupa } from '@/lib/supabase';
-import { sendWaitlistConfirmation } from '@/lib/email';
+import { sendWaitlistConfirmation, sendAdminWaitlistNotification } from '@/lib/email';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -45,5 +45,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to send confirmation email.' }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, message: 'You’re on the waitlist. We’ll email you when beta spots open.' });
+  try {
+    await sendAdminWaitlistNotification(email);
+  } catch (adminError) {
+    console.error('Admin notification email failed:', adminError);
+  }
+
+  return NextResponse.json({ success: true, message: "You're on the waitlist. We'll email you when beta spots open." });
+
 }
