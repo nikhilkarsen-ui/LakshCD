@@ -15,12 +15,12 @@ import ProfileView from '@/components/ProfileView';
 import AboutView from '@/components/AboutView';
 
 const HERO_FEATURES = [
-  { title: 'AMM Pricing', description: 'Token prices move with every trade through an automated market maker.' },
-  { title: 'Long & Short', description: 'Buy to go long or sell to open a short position with the same interface.' },
-  { title: '50% Margin', description: 'Only half of the trade value is held as initial margin on every position.' },
-  { title: 'Real-Time P&L', description: 'Track unrealized returns, margin health, and liquidation thresholds live.' },
-  { title: 'Leaderboard', description: 'Rank users by portfolio return and see top traders climb the board.' },
-  { title: 'Stat-Driven EV', description: 'Prices react to PPG, APG, efficiency, and simulated game momentum.' },
+  { title: 'AMM Pricing', description: 'Player share prices move with every trade through an automated market maker.' },
+  { title: 'Buy & Sell', description: 'Buy shares to go long on a player. Sell any shares you own back to the market.' },
+  { title: 'No Margin Required', description: 'Spend only what you have. No leverage, no borrowing, no margin calls.' },
+  { title: 'Real-Time P&L', description: 'Track your unrealized and realized gains across all holdings live.' },
+  { title: 'Leaderboard', description: 'Rank against other traders by portfolio return. Climb the board.' },
+  { title: 'Season Settlement', description: 'All remaining shares settle automatically at the player\'s final season price.' },
 ];
 
 const TICKER_SYMBOLS = ['LAL', 'BKN', 'GSW', 'MIL', 'BOS', 'PHX', 'MIA', 'OKC'];
@@ -31,10 +31,7 @@ function useScrollReveal() {
     if (!ref.current || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver((entries, obs) => {
       entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-          obs.unobserve(entry.target);
-        }
+        if (entry.isIntersecting) { entry.target.classList.add('visible'); obs.unobserve(entry.target); }
       });
     }, { threshold: 0.15 });
     observer.observe(ref.current);
@@ -76,16 +73,16 @@ function LandingPage({ onStart }: { onStart: () => void }) {
       </div>
 
       <div className="relative z-10">
-        <header className={`sticky top-0 z-30 transition duration-300 ${navScrolled ? 'backdrop-blur-xl bg-black/30 border-b border-white/10 shadow-black/20' : 'bg-transparent'} `}>
+        <header className={`sticky top-0 z-30 transition duration-300 ${navScrolled ? 'backdrop-blur-xl bg-black/30 border-b border-white/10 shadow-black/20' : 'bg-transparent'}`}>
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-lk-accent to-emerald-500 text-black font-bold">L</div>
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.24em] text-lk-accent/90">Laksh</p>
-                <p className="text-xs text-lk-dim">The 24/7 Sports Exchange</p>
+                <p className="text-xs text-lk-dim">The 24/7 Player Share Market</p>
               </div>
             </div>
-            <button onClick={onStart} className="rounded-full bg-lk-accent px-5 py-3 text-sm font-semibold text-black transition hover:brightness-110">Start Trading</button>
+            <button onClick={onStart} className="rounded-full bg-lk-accent px-5 py-3 text-sm font-semibold text-black transition hover:brightness-110">Sign In</button>
           </div>
         </header>
 
@@ -114,32 +111,32 @@ function LandingPage({ onStart }: { onStart: () => void }) {
             <div className="space-y-8">
               <div className="inline-flex items-center gap-2 rounded-full border border-lk-accent/20 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.32em] text-lk-accent shadow-lg shadow-lk-accent/5">Season settlement: June 15, 2026</div>
               <div className="space-y-6">
-                <p className="text-sm uppercase tracking-[0.4em] text-emerald-300/90">Fantasy tokenized trading</p>
-                <h1 className="text-5xl font-black tracking-tight text-white sm:text-6xl lg:text-7xl">Trade the <span className="bg-gradient-to-r from-emerald-300 via-cyan-200 to-sky-400 bg-clip-text text-transparent">future of sports</span></h1>
-                <p className="max-w-2xl text-lg leading-8 text-lk-dim">Speculate on NBA player performance with a simulated exchange. Buy long or sell short, manage 50% margin, and monitor unrealized P&L, liquidation risk and leaderboard momentum in real time.</p>
+                <p className="text-sm uppercase tracking-[0.4em] text-emerald-300/90">Fantasy player share market</p>
+                <h1 className="text-5xl font-black tracking-tight text-white sm:text-6xl lg:text-7xl">Trade player <span className="bg-gradient-to-r from-emerald-300 via-cyan-200 to-sky-400 bg-clip-text text-transparent">shares</span></h1>
+                <p className="max-w-2xl text-lg leading-8 text-lk-dim">Speculate on NBA player performance. Buy shares when you're bullish, sell when you're not. Prices reflect the market's best estimate of each player's final season value.</p>
               </div>
 
               <div className="flex flex-wrap gap-4">
-                <button onClick={onStart} className="rounded-full bg-lk-accent px-7 py-3 text-sm font-semibold text-black transition hover:brightness-110">Create Your Account</button>
+                <button onClick={onStart} className="rounded-full bg-lk-accent px-7 py-3 text-sm font-semibold text-black transition hover:brightness-110">Sign In</button>
                 <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="rounded-full border border-white/10 bg-white/5 px-7 py-3 text-sm text-white transition hover:bg-white/10">Explore Player Prices</button>
               </div>
 
               <div className="mt-8 rounded-3xl border border-white/10 bg-black/40 p-6 shadow-xl shadow-black/10">
                 <p className="text-sm uppercase tracking-[0.35em] text-lk-accent">Join the beta waitlist</p>
-                <p className="mt-3 text-sm text-lk-text">Submit your email and we’ll email you when beta spots open.</p>
+                <p className="mt-3 text-sm text-lk-text">Submit your email and we'll email you when beta spots open.</p>
                 <WaitlistForm />
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-                  <p className="text-sm uppercase tracking-[0.3em] text-lk-dim">Margin</p>
-                  <p className="mt-3 text-3xl font-semibold text-white">50%</p>
-                  <p className="mt-2 text-sm text-lk-muted">Half of the position value is held as initial margin.</p>
+                  <p className="text-sm uppercase tracking-[0.3em] text-lk-dim">Starting Cash</p>
+                  <p className="mt-3 text-3xl font-semibold text-white">$10,000</p>
+                  <p className="mt-2 text-sm text-lk-muted">Every trader starts with $10K in virtual cash to invest.</p>
                 </div>
                 <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
                   <p className="text-sm uppercase tracking-[0.3em] text-lk-dim">Updates</p>
                   <p className="mt-3 text-3xl font-semibold text-white">Every 5s</p>
-                  <p className="mt-2 text-sm text-lk-muted">Prices refresh automatically with live performance data.</p>
+                  <p className="mt-2 text-sm text-lk-muted">Prices refresh automatically and drift toward expected final value.</p>
                 </div>
               </div>
             </div>
@@ -159,8 +156,8 @@ function LandingPage({ onStart }: { onStart: () => void }) {
                   <div className="rounded-3xl bg-black/40 p-5 text-white shadow-lg shadow-black/10">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-xs uppercase tracking-[0.3em] text-lk-dim">Token Price</p>
-                        <p className="mt-3 text-3xl font-semibold">$42.38</p>
+                        <p className="text-xs uppercase tracking-[0.3em] text-lk-dim">Share Price</p>
+                        <p className="mt-3 text-3xl font-semibold">$245.30</p>
                       </div>
                       <div className="rounded-3xl bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-300">+4.6%</div>
                     </div>
@@ -178,18 +175,9 @@ function LandingPage({ onStart }: { onStart: () => void }) {
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-3xl bg-black/40 p-4 text-xs text-lk-dim">
-                      <p>PPG</p>
-                      <p className="mt-2 text-sm text-white">28.4</p>
-                    </div>
-                    <div className="rounded-3xl bg-black/40 p-4 text-xs text-lk-dim">
-                      <p>APG</p>
-                      <p className="mt-2 text-sm text-white">8.7</p>
-                    </div>
-                    <div className="rounded-3xl bg-black/40 p-4 text-xs text-lk-dim">
-                      <p>Efficiency</p>
-                      <p className="mt-2 text-sm text-white">27.1</p>
-                    </div>
+                    <div className="rounded-3xl bg-black/40 p-4 text-xs text-lk-dim"><p>PPG</p><p className="mt-2 text-sm text-white">24.8</p></div>
+                    <div className="rounded-3xl bg-black/40 p-4 text-xs text-lk-dim"><p>APG</p><p className="mt-2 text-sm text-white">8.1</p></div>
+                    <div className="rounded-3xl bg-black/40 p-4 text-xs text-lk-dim"><p>EFF</p><p className="mt-2 text-sm text-white">23.9</p></div>
                   </div>
                 </div>
               </div>
@@ -199,7 +187,7 @@ function LandingPage({ onStart }: { onStart: () => void }) {
           <section id="features" className="mt-24">
             <div className="mx-auto max-w-2xl text-center">
               <p className="text-sm uppercase tracking-[0.4em] text-lk-accent/90">How Laksh works</p>
-              <h2 className="mt-4 text-4xl font-bold text-white">A sports trading platform built for momentum and risk control.</h2>
+              <h2 className="mt-4 text-4xl font-bold text-white">A prediction market for NBA season outcomes.</h2>
             </div>
 
             <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -217,10 +205,10 @@ function LandingPage({ onStart }: { onStart: () => void }) {
               <p className="text-sm uppercase tracking-[0.35em] text-lk-accent">How it works</p>
               <div className="mt-8 grid gap-5 sm:grid-cols-2">
                 {[
-                  { step: '1', title: 'Choose athletes', desc: 'Browse NBA player tokens and price curves powered by AMM supply/demand.' },
-                  { step: '2', title: 'Stake virtual dollars', desc: 'Open long or short positions with 50% initial margin.' },
-                  { step: '3', title: 'Monitor health', desc: 'Track P&L, margin usage, and liquidation levels instantly.' },
-                  { step: '4', title: 'Settle season', desc: 'Positions settle on the season expiry date to lock results.' },
+                  { step: '1', title: 'Browse players', desc: 'Pick NBA players and see share prices driven by AMM supply and demand.' },
+                  { step: '2', title: 'Buy shares', desc: 'Spend virtual cash to buy shares. Price reflects the expected final season value.' },
+                  { step: '3', title: 'Track holdings', desc: 'Monitor market value, unrealized P&L, and realized gains from past sells.' },
+                  { step: '4', title: 'Season settlement', desc: 'All remaining shares auto-settle at the final price when the season ends.' },
                 ].map(item => (
                   <div key={item.step} className="rounded-3xl border border-white/10 bg-black/20 p-5">
                     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/5 text-lg font-semibold text-white">{item.step}</div>
@@ -234,7 +222,7 @@ function LandingPage({ onStart }: { onStart: () => void }) {
             <div className="rounded-[2rem] border border-emerald-500/20 bg-emerald-500/5 p-8 shadow-[0_30px_80px_-45px_rgba(16,185,129,0.35)]">
               <p className="text-sm uppercase tracking-[0.35em] text-emerald-200">Settlement date</p>
               <h3 className="mt-4 text-3xl font-semibold text-white">June 15, 2026</h3>
-              <p className="mt-4 text-sm leading-6 text-lk-dim">The season expiry date defines a hard endpoint for all open trade positions and final portfolio settlement.</p>
+              <p className="mt-4 text-sm leading-6 text-lk-dim">All remaining share holdings are automatically settled at each player's final value when the season ends.</p>
               <div className="mt-8 rounded-3xl bg-black/20 px-5 py-4">
                 <p className="text-xs uppercase tracking-[0.35em] text-lk-dim">Countdown to settlement</p>
                 <p className="mt-3 text-2xl font-semibold text-white">{countdown}</p>
@@ -246,8 +234,8 @@ function LandingPage({ onStart }: { onStart: () => void }) {
             <div className="grid gap-4 sm:grid-cols-4">
               {[
                 { label: 'Players', value: '15' },
-                { label: 'Starting', value: '$10K' },
-                { label: 'Margin', value: '50%' },
+                { label: 'Starting Cash', value: '$10K' },
+                { label: 'No Margin', value: '0%' },
                 { label: 'Updates', value: '5s' },
               ].map(item => (
                 <div key={item.label} className="rounded-3xl border border-white/10 bg-white/5 p-6 text-center">
@@ -260,8 +248,8 @@ function LandingPage({ onStart }: { onStart: () => void }) {
 
           <section className="mt-24 rounded-[2rem] border border-white/10 bg-white/5 p-12 text-center shadow-2xl shadow-black/20">
             <p className="text-sm uppercase tracking-[0.35em] text-lk-accent">Ready to trade?</p>
-            <h2 className="mt-5 text-4xl font-black leading-tight text-white">Launch your mock season with emergent NBA price discovery.</h2>
-            <button onClick={onStart} className="landing-glow-btn mt-10 inline-flex rounded-full bg-lk-accent px-9 py-4 text-sm font-semibold text-black transition hover:brightness-110">Start Trading</button>
+            <h2 className="mt-5 text-4xl font-black leading-tight text-white">Buy and sell player shares. Settle at season end.</h2>
+            <button onClick={onStart} className="landing-glow-btn mt-10 inline-flex rounded-full bg-lk-accent px-9 py-4 text-sm font-semibold text-black transition hover:brightness-110">Sign In</button>
           </section>
         </main>
 
@@ -274,10 +262,10 @@ function LandingPage({ onStart }: { onStart: () => void }) {
 }
 
 function Shell() {
-  const { user, session, loading: authLoading, signIn, signUp, signOut } = useAuth();
+  const { user, session, loading: authLoading, signIn, signOut } = useAuth();
   const [approvalState, setApprovalState] = useState<'unknown' | 'approved' | 'pending' | 'error'>('unknown');
   const router = useRouter();
-  const { players, openInterest, loading: pLoading } = usePlayers();
+  const { players, marketCap, loading: pLoading } = usePlayers();
   const { portfolio } = usePortfolio();
   const [tab, setTab] = useState('home');
   const [pid, setPid] = useState<string | null>(null);
@@ -285,40 +273,20 @@ function Shell() {
   usePriceTicker();
 
   useEffect(() => {
-    if (!user || !session?.access_token) {
-      setApprovalState('unknown');
-      return;
-    }
-
+    if (!user || !session?.access_token) { setApprovalState('unknown'); return; }
     let active = true;
     const checkApproval = async () => {
       setApprovalState('unknown');
-
       try {
-        const res = await fetch('/api/check-approval', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
+        const res = await fetch('/api/check-approval', { headers: { Authorization: `Bearer ${session.access_token}` } });
         const data = await res.json();
-
         if (!active) return;
-        if (!res.ok) {
-          setApprovalState('error');
-          return;
-        }
-
-        if (data.approved) {
-          setApprovalState('approved');
-          return;
-        }
-
+        if (!res.ok) { setApprovalState('error'); return; }
+        if (data.approved) { setApprovalState('approved'); return; }
         setApprovalState('pending');
         router.push('/pending');
-      } catch (error) {
-        if (!active) return;
-        setApprovalState('error');
-      }
+      } catch { if (!active) return; setApprovalState('error'); }
     };
-
     checkApproval();
     return () => { active = false; };
   }, [user, session?.access_token, router]);
@@ -346,7 +314,7 @@ function Shell() {
       return (
         <div className="relative min-h-screen bg-lk-bg px-6 py-8 sm:px-10">
           <button onClick={backToLanding} className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white transition hover:bg-white/10">← Back</button>
-          <AuthForm onSignIn={signIn} onSignUp={signUp} />
+          <AuthForm onSignIn={signIn} />
         </div>
       );
     }
@@ -359,7 +327,7 @@ function Shell() {
     <div className="min-h-screen bg-lk-bg">
       <Header balance={balance} onSignOut={signOut}/>
       <main className="max-w-lg mx-auto pb-24">
-        {tab === 'home' && !pid && <HomeView players={players} openInterest={openInterest} loading={pLoading} onSelect={selectPlayer}/>}
+        {tab === 'home' && !pid && <HomeView players={players} marketCap={marketCap} loading={pLoading} onSelect={selectPlayer}/>}
         {tab === 'home' && pid && <PlayerDetail playerId={pid} onBack={back}/>}
         {tab === 'portfolio' && <PortfolioView onSelect={selectPlayer}/>}
         {tab === 'leaderboard' && <LeaderboardView/>}

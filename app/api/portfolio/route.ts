@@ -1,27 +1,18 @@
 // ============================================================
-// Futures portfolio accounting
+// Portfolio — spot share ownership accounting
 //
-// After daily MTM, variation margin has already flowed into
-// the cash balance. So total_value uses INTRADAY unrealized P&L
-// (current − last_settlement) rather than the full open P&L:
-//
-//   total_value = cash                        (includes all past MTM flows)
-//               + locked_margin_at_entry      (50% of notional at entry price)
-//               + intraday_pnl               (current − last_settlement × size)
-//
-// This equals the pre-MTM formula when last_settlement = avg_entry,
-// so it's backwards-compatible for new positions.
-//
-// total_pnl (display) still shows full P&L since entry:
-//   (current − avg_entry) × size
+// total_value   = cash_balance + holdings_value
+// holdings_value = sum(shares_owned * current_price)
+// unrealized_pnl = holdings_value - total_cost_basis
+// total_pnl     = unrealized_pnl + cumulative_realized_pnl
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApprovedAppUser, unauth } from '@/lib/auth';
 import { serverSupa } from '@/lib/supabase';
-import { calcMargin } from '@/lib/trading';
-import { MARGIN } from '@/config/constants';
 export const dynamic = 'force-dynamic';
+
+const PLAYER_NUM_FIELDS = ['current_price', 'previous_price', 'price_change_24h', 'price_change_pct_24h', 'expected_value', 'expected_final_value', 'volatility', 'ppg', 'apg', 'rpg', 'efficiency'];
 
 export async function GET(req: NextRequest) {
   const authUser = await getApprovedAppUser(req);
@@ -32,100 +23,71 @@ export async function GET(req: NextRequest) {
   const initial = Number(authUser.initial_balance);
 
   const { data: rawPositions, error: posErr } = await db
-    .from('positions').select('*, player:players(*)').eq('user_id', authUser.id);
+    .from('positions')
+    .select('*, player:players(*)')
+    .eq('user_id', authUser.id);
   if (posErr) return NextResponse.json({ error: 'Failed to load positions' }, { status: 500 });
 
-  const positions = (rawPositions || []).filter((p: any) => Math.abs(Number(p.position_size)) > 0.0001);
+  // Filter out zero-share positions (cleanup guard)
+  const positions = (rawPositions || []).filter((p: any) => Number(p.shares_owned) > 0.0001);
 
-  let totalIntradayPnl = 0;   // (current − last_settlement) × size — for total_value
-  let totalLockedMargin = 0;
-  let totalPnlSinceEntry = 0; // (current − avg_entry) × size — for display
+  let totalHoldingsValue = 0;
+  let totalCostBasis = 0;
+  let totalRealizedPnl = 0;
 
   const enriched = positions.map((p: any) => {
-    const size = Number(p.position_size);
-    const avg = Number(p.avg_entry_price);
-    const curPrice = Number(p.player?.current_price || 0);
-    const notional = Math.abs(size) * curPrice;
+    const shares = Number(p.shares_owned);
+    const avgCost = Number(p.avg_cost_basis);
+    const realized = Number(p.realized_pnl ?? 0);
 
-    // Full P&L since entry (for display)
-    const pnlSinceEntry = (curPrice - avg) * size;
-    const costBasis = Math.abs(size) * avg;
-    const pnlPct = costBasis > 0 ? (pnlSinceEntry / costBasis) * 100 : 0;
-
-    // Intraday P&L since last daily settlement (for total_value formula)
-    const lastSettle = p.last_settlement_price !== null ? Number(p.last_settlement_price) : avg;
-    const intradayPnl = (curPrice - lastSettle) * size;
-    const dailyPnlPct = (Math.abs(lastSettle) * Math.abs(size)) > 0
-      ? (intradayPnl / (Math.abs(lastSettle) * Math.abs(size))) * 100
-      : 0;
-
-    const isLong = size > 0;
-    // lockedMargin for DISPLAY: current notional × margin rate
-    const lockedMargin = notional * MARGIN.initial;
-    // lockedAtEntry: what was actually deducted when position was opened
-    const lockedAtEntry = Math.abs(size) * avg * MARGIN.initial;
-
-    totalIntradayPnl += intradayPnl;
-    totalLockedMargin += lockedAtEntry;
-    totalPnlSinceEntry += pnlSinceEntry;
-
-    // Liquidation price estimate (single-position simplified)
-    const maintMargin = notional * MARGIN.maintenance;
-    let liqPrice: number;
-    if (isLong) {
-      liqPrice = Math.max(0, curPrice - (balance - maintMargin) / Math.abs(size));
-    } else {
-      liqPrice = curPrice + (balance - maintMargin) / Math.abs(size);
-    }
-
-    // Coerce player numeric fields
     const player = p.player;
     if (player) {
-      for (const f of ['current_price', 'previous_price', 'price_change_24h', 'price_change_pct_24h', 'expected_value', 'volatility', 'ppg', 'apg', 'rpg', 'efficiency']) {
-        if (player[f] !== undefined) player[f] = Number(player[f]);
-      }
+      for (const f of PLAYER_NUM_FIELDS) if (player[f] !== undefined) player[f] = Number(player[f]);
     }
+    const curPrice = player ? Number(player.current_price) : 0;
+
+    const marketValue = shares * curPrice;
+    const costBasis = shares * avgCost;
+    const unrealizedPnl = marketValue - costBasis;
+    const unrealizedPnlPct = costBasis > 0 ? (unrealizedPnl / costBasis) * 100 : 0;
+
+    totalHoldingsValue += marketValue;
+    totalCostBasis += costBasis;
+    totalRealizedPnl += realized;
 
     return {
       ...p,
-      position_size: size,
-      avg_entry_price: avg,
-      last_settlement_price: p.last_settlement_price !== null ? Number(p.last_settlement_price) : null,
+      shares_owned: shares,
+      avg_cost_basis: avgCost,
+      realized_pnl: realized,
       current_price: curPrice,
-      notional: parseFloat(notional.toFixed(2)),
-      pnl: parseFloat(pnlSinceEntry.toFixed(2)),
-      pnl_pct: parseFloat(pnlPct.toFixed(2)),
-      daily_pnl: parseFloat(intradayPnl.toFixed(2)),
-      daily_pnl_pct: parseFloat(dailyPnlPct.toFixed(2)),
-      side: isLong ? 'buy' : 'sell',
-      liq_price: parseFloat(Math.max(0, liqPrice).toFixed(2)),
-      locked_margin: parseFloat(lockedMargin.toFixed(2)),
+      market_value: parseFloat(marketValue.toFixed(2)),
+      cost_basis: parseFloat(costBasis.toFixed(2)),
+      unrealized_pnl: parseFloat(unrealizedPnl.toFixed(2)),
+      unrealized_pnl_pct: parseFloat(unrealizedPnlPct.toFixed(2)),
       player,
     };
   });
 
-  // Margin status uses equity = cash balance
-  const marginPositions = positions.map((p: any) => ({
-    size: Number(p.position_size),
-    price: Number(p.player?.current_price || 0),
-  }));
-  const margin = calcMargin(balance, marginPositions);
+  const totalUnrealizedPnl = totalHoldingsValue - totalCostBasis;
+  const totalPnl = totalUnrealizedPnl + totalRealizedPnl;
+  const totalValue = balance + totalHoldingsValue;
+  const totalPnlPct = initial > 0 ? ((totalValue - initial) / initial) * 100 : 0;
 
-  // Total portfolio value: cash (includes all settled MTM flows)
-  //   + locked_margin_at_entry (what was originally deducted for margin)
-  //   + intraday unrealized P&L (since last daily settlement)
-  const totalValue = balance + totalLockedMargin + totalIntradayPnl;
-  const totalPnl = totalValue - initial;
-  const totalPnlPct = initial > 0 ? (totalPnl / initial) * 100 : 0;
-
-  // Trades history
-  const { data: trades } = await db.from('trades')
+  // Trade history
+  const { data: trades } = await db
+    .from('trades')
     .select('*, player:players(id, name, team)')
     .eq('user_id', authUser.id)
-    .order('created_at', { ascending: false }).limit(50);
+    .order('created_at', { ascending: false })
+    .limit(50);
 
   const coercedTrades = (trades || []).map((t: any) => ({
-    ...t, size: Number(t.size), price: Number(t.price), pnl: Number(t.pnl || 0),
+    ...t,
+    shares: Number(t.shares),
+    price: Number(t.price),
+    total_value: Number(t.total_value),
+    realized_pnl: Number(t.realized_pnl ?? 0),
   }));
 
   return NextResponse.json({
@@ -136,12 +98,11 @@ export async function GET(req: NextRequest) {
     portfolio: {
       total_value: parseFloat(totalValue.toFixed(2)),
       cash_balance: balance,
-      locked_margin: parseFloat(totalLockedMargin.toFixed(2)),
-      positions_value: parseFloat(totalPnlSinceEntry.toFixed(2)),  // total unrealized P&L since entry
-      daily_pnl: parseFloat(totalIntradayPnl.toFixed(2)),           // today's variation margin
+      holdings_value: parseFloat(totalHoldingsValue.toFixed(2)),
+      unrealized_pnl: parseFloat(totalUnrealizedPnl.toFixed(2)),
+      realized_pnl: parseFloat(totalRealizedPnl.toFixed(2)),
       total_pnl: parseFloat(totalPnl.toFixed(2)),
       total_pnl_pct: parseFloat(totalPnlPct.toFixed(2)),
-      margin,
       positions: enriched,
     },
     trades: coercedTrades,

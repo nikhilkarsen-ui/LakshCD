@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { serverSupa } from '@/lib/supabase';
 export const dynamic = 'force-dynamic';
 
-const NF = ['current_price','previous_price','price_change_24h','price_change_pct_24h','expected_value','volatility','ppg','apg','rpg','efficiency','pool_x','pool_y'];
+const NF = ['current_price','previous_price','price_change_24h','price_change_pct_24h','expected_value','expected_final_value','volatility','ppg','apg','rpg','efficiency','pool_x','pool_y'];
 
 export async function GET(
   req: NextRequest,

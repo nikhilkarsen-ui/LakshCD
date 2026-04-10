@@ -1,13 +1,26 @@
-export const APP = { name: 'Laksh', tagline: 'The 24/7 Sports Exchange' } as const;
-export const SEASON = { settlement_date: '2026-06-15T00:00:00Z', total_games: 82 } as const;
+export const APP = { name: 'Laksh', tagline: 'The 24/7 Player Share Market' } as const;
+
+// Season end = final settlement date for all remaining holdings
+export const SEASON = { settlement_date: '2026-06-15T00:00:00Z', total_games: 82, start_date: '2025-10-01T00:00:00Z' } as const;
+
 export const TRADE = { initial_balance: 10000, min_amount: 1, max_amount: 50000, fee_rate: 0.001, max_slippage: 0.05, amm_k: 5_000_000 } as const;
-export const MARGIN = { initial: 0.50, maintenance: 0.25 } as const; // 50% IM, 25% MM
+
 export const PRICING = {
-  ev_w: 0.40, amm_w: 0.25, momentum_w: 0.15, vol_w: 0.20,
-  reversion: 0.018, noise: 0.35, ema_alpha: 0.12, trend_window: 20, max_tick: 0.03,
+  // Weights for expected-final-value computation
   pts_w: 0.35, ast_w: 0.20, reb_w: 0.20, eff_w: 0.25,
   max_pts: 2800, max_ast: 900, max_reb: 1200, max_eff: 3000,
+  // EFV → price mapping: EV score * efv_scale = expected_final_value in dollars
+  efv_scale: 0.40,
+  // Tick engine parameters
+  drift_base: 0.018,        // base mean-reversion speed toward EFV
+  drift_season_boost: 0.40, // additional convergence as season progresses (multiplied by progress 0→1)
+  momentum_w: 0.05,         // reduced momentum weight (was 0.15 in futures model)
+  noise: 0.05,              // reduced noise (was 0.35) — ticks feel intelligent not random
+  ema_alpha: 0.12,
+  trend_window: 20,
+  max_tick: 0.03,           // max 3% move per tick
 } as const;
+
 export const POLL = { prices: 5000, portfolio: 6000, leaderboard: 30000 } as const;
 
 export const SEED_PLAYERS = [

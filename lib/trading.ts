@@ -1,18 +1,21 @@
 // ============================================================
-// LAKSH — Trading Engine
-// ============================================================
-// SECURITY: Settlement gate blocks trades after expiry
-// SECURITY: Rate limit — 10 trades/minute per user
-// SECURITY: Optimistic concurrency lock on balance updates
-//           (WHERE balance = $expected prevents double-spend)
-// FIX: delta uses amm.qty (exact tokens in/out) not netDollars/effPrice
-// FIX: current_price updated to AMM spot after every trade
-//      (eliminates tick/pool divergence arbitrage window)
-// FIX: runSettlement force-closes all positions at season end
+// LAKSH v3 — Trading Engine (Buy/Sell Share Market)
+//
+// Rules enforced server-side:
+//   - BUY: deduct full dollar amount from cash; gain shares
+//   - SELL: must own enough shares; gain cash proceeds
+//   - shares_owned never goes below zero
+//   - no shorting, no margin, no leverage, no liquidation
+//   - realized P&L computed on each sell
+//   - season-end settlement credits cash for all remaining shares
+//
+// Security:
+//   - Optimistic concurrency lock on balance updates
+//   - Rate limit: 10 trades per minute per user
 // ============================================================
 
-import { TradeRequest, MarginInfo } from '@/types';
-import { TRADE, MARGIN, SEASON } from '@/config/constants';
+import { TradeRequest } from '@/types';
+import { TRADE, SEASON } from '@/config/constants';
 import { computeAMMImpact } from './pricing';
 import { serverSupa } from './supabase';
 
@@ -20,444 +23,300 @@ const EPSILON = 1e-6;
 const RATE_LIMIT_TRADES = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
-function normalizePosition(qty: number): number {
-  const normalized = Number(qty.toFixed(6));
-  return Math.abs(normalized) < EPSILON ? 0 : normalized;
+function snap(qty: number): number {
+  const n = Number(qty.toFixed(6));
+  return Math.abs(n) < EPSILON ? 0 : n;
 }
 
-export function calcMargin(equity: number, positions: { size: number; price: number }[]): MarginInfo {
-  let notional = 0;
-  for (const p of positions) notional += Math.abs(p.size * p.price);
-  const req = notional * MARGIN.initial;
-  const maint = notional * MARGIN.maintenance;
-  const avail = Math.max(0, equity - req);
-  let health: MarginInfo['health'] = 'safe';
-  if (notional > 0 && equity <= maint) health = 'liquidation';
-  else if (notional > 0 && equity <= req * 1.15) health = 'warning';
-  return {
-    equity,
-    total_notional: notional,
-    required_margin: req,
-    maintenance_margin: maint,
-    margin_available: avail,
-    margin_usage_pct: equity > 0 ? (req / equity) * 100 : 0,
-    health,
-  };
-}
+// ─── Buy ──────────────────────────────────────────────────
+// Spends `dollars` of cash to buy shares at AMM price.
+// Updates weighted average cost basis.
+// ─────────────────────────────────────────────────────────
+async function executeBuy(userId: string, req: TradeRequest) {
+  const db = serverSupa();
 
-export async function executeTrade(userId: string, req: TradeRequest) {
-  // Settlement gate: no trades after season expiry
-  if (Date.now() >= new Date(SEASON.settlement_date).getTime()) {
-    return { success: false, error: 'Season has settled — trading is closed' };
+  // 1. User
+  let { data: user } = await db.from('users').select('*').eq('id', userId).single();
+  if (!user) {
+    const { data: nu } = await db
+      .from('users')
+      .insert({ id: userId, email: 'user@laksh.exchange', display_name: 'Trader', balance: TRADE.initial_balance, initial_balance: TRADE.initial_balance })
+      .select().single();
+    if (!nu) return { success: false, error: 'User not found' };
+    user = nu;
+  }
+  const bal = Number(user.balance);
+
+  // 2. Rate limit
+  const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
+  const { count: recentCount } = await db.from('trades').select('*', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', windowStart);
+  if ((recentCount ?? 0) >= RATE_LIMIT_TRADES) {
+    return { success: false, error: `Rate limit: max ${RATE_LIMIT_TRADES} trades per minute` };
   }
 
+  // 3. Player
+  const { data: player } = await db.from('players').select('*').eq('id', req.player_id).single();
+  if (!player) return { success: false, error: 'Player not found' };
+  if (player.settlement_status === 'settled') return { success: false, error: 'This player has already settled — trading is closed' };
+
+  const poolX = Number(player.pool_x), poolY = Number(player.pool_y);
+
+  // 4. Validate amount
+  const dollars = req.dollars;
+  if (dollars > TRADE.max_amount) return { success: false, error: `Max trade $${TRADE.max_amount}` };
+  if (dollars < TRADE.min_amount) return { success: false, error: `Min trade $${TRADE.min_amount}` };
+  const fee = dollars * TRADE.fee_rate;
+  const netDollars = dollars - fee;
+  const totalDeducted = dollars; // full amount leaves cash (fee is part of spend)
+
+  // 5. Sufficient funds
+  if (totalDeducted > bal) {
+    return { success: false, error: `Insufficient funds. Need $${totalDeducted.toFixed(2)}, have $${bal.toFixed(2)}` };
+  }
+
+  // 6. AMM impact
+  const amm = computeAMMImpact(poolX, poolY, netDollars, 'buy');
+  if (amm.slippage > TRADE.max_slippage) {
+    return { success: false, error: `Slippage too high (${(amm.slippage * 100).toFixed(1)}%)` };
+  }
+  const sharesAcquired = snap(amm.qty);
+  if (sharesAcquired <= 0) return { success: false, error: 'Trade amount too small' };
+
+  const effPrice = amm.effectivePrice;
+  const newBal = parseFloat((bal - totalDeducted).toFixed(2));
+
+  // 7. Current position
+  const { data: pos } = await db.from('positions').select('*').eq('user_id', userId).eq('player_id', req.player_id).maybeSingle();
+  const oldShares = pos ? snap(Number(pos.shares_owned)) : 0;
+  const oldAvg = pos ? Number(pos.avg_cost_basis) : 0;
+  const oldRealized = pos ? Number(pos.realized_pnl) : 0;
+
+  const newShares = snap(oldShares + sharesAcquired);
+  // Weighted average cost basis
+  const newAvg = oldShares > 0
+    ? (oldShares * oldAvg + sharesAcquired * effPrice) / newShares
+    : effPrice;
+
+  // 8. Atomic balance update
+  const { data: updatedUser } = await db.from('users')
+    .update({ balance: newBal, updated_at: new Date().toISOString() })
+    .eq('id', userId).eq('balance', parseFloat(bal.toFixed(2)))
+    .select('balance').single();
+  if (!updatedUser) return { success: false, error: 'Trade conflict — balance changed concurrently, please retry' };
+
+  // 9. Update position
+  await db.from('positions').upsert(
+    { user_id: userId, player_id: req.player_id, shares_owned: newShares, avg_cost_basis: parseFloat(newAvg.toFixed(2)), realized_pnl: oldRealized, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id,player_id' }
+  );
+
+  // 10. Record trade
+  const { data: trade } = await db.from('trades').insert({
+    user_id: userId, player_id: req.player_id, side: 'buy',
+    shares: sharesAcquired, price: parseFloat(effPrice.toFixed(2)),
+    total_value: parseFloat(dollars.toFixed(2)), realized_pnl: 0,
+  }).select().single();
+
+  // 11. Sync AMM pools and current_price
+  const newSpot = amm.newX > 0 ? parseFloat((amm.newY / amm.newX).toFixed(2)) : Number(player.current_price);
+  await db.from('players').update({
+    pool_x: parseFloat(amm.newX.toFixed(4)), pool_y: parseFloat(amm.newY.toFixed(4)),
+    current_price: newSpot, updated_at: new Date().toISOString(),
+  }).eq('id', req.player_id);
+
+  console.log(`BUY user=${userId} shares=${sharesAcquired.toFixed(6)} effPrice=${effPrice.toFixed(2)} newBal=${newBal}`);
+  return { success: true, trade, new_balance: newBal };
+}
+
+// ─── Sell ─────────────────────────────────────────────────
+// Converts `dollars` notional worth of shares back to cash.
+// Validates user owns sufficient shares first.
+// Computes realized P&L = (effPrice - avg_cost) * shares_sold.
+// ─────────────────────────────────────────────────────────
+async function executeSell(userId: string, req: TradeRequest) {
   const db = serverSupa();
+
+  // 1. User
+  let { data: user } = await db.from('users').select('*').eq('id', userId).single();
+  if (!user) return { success: false, error: 'User not found' };
+  const bal = Number(user.balance);
+
+  // 2. Rate limit
+  const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
+  const { count: recentCount } = await db.from('trades').select('*', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', windowStart);
+  if ((recentCount ?? 0) >= RATE_LIMIT_TRADES) {
+    return { success: false, error: `Rate limit: max ${RATE_LIMIT_TRADES} trades per minute` };
+  }
+
+  // 3. Player
+  const { data: player } = await db.from('players').select('*').eq('id', req.player_id).single();
+  if (!player) return { success: false, error: 'Player not found' };
+  if (player.settlement_status === 'settled') return { success: false, error: 'This player has already settled — trading is closed' };
+
+  const poolX = Number(player.pool_x), poolY = Number(player.pool_y);
+  const spot = poolY > 0 && poolX > 0 ? poolY / poolX : Number(player.current_price);
+
+  // 4. Current position
+  const { data: pos } = await db.from('positions').select('*').eq('user_id', userId).eq('player_id', req.player_id).maybeSingle();
+  const sharesOwned = pos ? snap(Number(pos.shares_owned)) : 0;
+  const avgCost = pos ? Number(pos.avg_cost_basis) : 0;
+  const oldRealized = pos ? Number(pos.realized_pnl) : 0;
+
+  if (sharesOwned <= 0) return { success: false, error: 'You have no shares in this player to sell' };
+
+  // 5. Validate amount
+  const dollars = req.dollars;
+  if (dollars < TRADE.min_amount) return { success: false, error: `Min trade $${TRADE.min_amount}` };
+  const fee = dollars * TRADE.fee_rate;
+  const netDollars = dollars - fee;
+
+  // 6. AMM impact — returns qty = tokensIn (shares to sell)
+  const amm = computeAMMImpact(poolX, poolY, netDollars, 'sell');
+  const sharesToSell = snap(amm.qty);
+
+  if (sharesToSell <= 0) return { success: false, error: 'Trade amount too small' };
+
+  // 7. Ownership check — cannot sell more than owned
+  if (sharesToSell > sharesOwned + EPSILON) {
+    const maxSellDollars = sharesOwned * spot;
+    return {
+      success: false,
+      error: `Insufficient shares. You own ${sharesOwned.toFixed(4)} shares (≈$${maxSellDollars.toFixed(2)} at current price). Reduce sell amount.`,
+    };
+  }
+
+  if (amm.slippage > TRADE.max_slippage) {
+    return { success: false, error: `Slippage too high (${(amm.slippage * 100).toFixed(1)}%)` };
+  }
+
+  const actualSold = Math.min(sharesToSell, sharesOwned);
+  const effPrice = amm.effectivePrice;
+  const usdOut = effPrice * actualSold;
+  const proceeds = parseFloat((usdOut - fee).toFixed(2));
+
+  // 8. Realized P&L
+  const realizedPnl = parseFloat(((effPrice - avgCost) * actualSold).toFixed(2));
+  const newRealized = parseFloat((oldRealized + realizedPnl).toFixed(2));
+
+  const newBal = parseFloat((bal + proceeds).toFixed(2));
+  const newShares = snap(sharesOwned - actualSold);
+
+  // 9. Atomic balance update
+  const { data: updatedUser } = await db.from('users')
+    .update({ balance: newBal, updated_at: new Date().toISOString() })
+    .eq('id', userId).eq('balance', parseFloat(bal.toFixed(2)))
+    .select('balance').single();
+  if (!updatedUser) return { success: false, error: 'Trade conflict — balance changed concurrently, please retry' };
+
+  // 10. Update or delete position
+  if (newShares <= 0) {
+    await db.from('positions').delete().eq('user_id', userId).eq('player_id', req.player_id);
+  } else {
+    await db.from('positions').update({
+      shares_owned: newShares,
+      // avg_cost_basis stays the same when selling (FIFO-like; cost basis tracks remaining shares)
+      avg_cost_basis: parseFloat(avgCost.toFixed(2)),
+      realized_pnl: newRealized,
+      updated_at: new Date().toISOString(),
+    }).eq('user_id', userId).eq('player_id', req.player_id);
+  }
+
+  // 11. Record trade
+  const { data: trade } = await db.from('trades').insert({
+    user_id: userId, player_id: req.player_id, side: 'sell',
+    shares: actualSold, price: parseFloat(effPrice.toFixed(2)),
+    total_value: parseFloat(usdOut.toFixed(2)), realized_pnl: realizedPnl,
+  }).select().single();
+
+  // 12. Sync AMM pools and current_price
+  const newSpot = amm.newX > 0 ? parseFloat((amm.newY / amm.newX).toFixed(2)) : Number(player.current_price);
+  await db.from('players').update({
+    pool_x: parseFloat(amm.newX.toFixed(4)), pool_y: parseFloat(amm.newY.toFixed(4)),
+    current_price: newSpot, updated_at: new Date().toISOString(),
+  }).eq('id', req.player_id);
+
+  console.log(`SELL user=${userId} shares=${actualSold.toFixed(6)} effPrice=${effPrice.toFixed(2)} pnl=${realizedPnl.toFixed(2)} newBal=${newBal}`);
+  return { success: true, trade, new_balance: newBal, realized_pnl: realizedPnl };
+}
+
+// ─── Public executor (routes call this) ──────────────────
+export async function executeTrade(userId: string, req: TradeRequest) {
+  // Season gate: after settlement_date, all positions are auto-settled
+  if (Date.now() >= new Date(SEASON.settlement_date).getTime()) {
+    return { success: false, error: 'Season has settled — trading is closed. All remaining shares will be settled at final price.' };
+  }
   try {
-    // 1. User
-    let { data: user, error: ue } = await db.from('users').select('*').eq('id', userId).single();
-    if (ue || !user) {
-      const { data: nu } = await db
-        .from('users')
-        .insert({
-          id: userId,
-          email: 'user@laksh.exchange',
-          display_name: 'Trader',
-          balance: TRADE.initial_balance,
-          initial_balance: TRADE.initial_balance,
-        })
-        .select()
-        .single();
-      if (!nu) return { success: false, error: 'User not found' };
-      user = nu;
-    }
-    const bal = Number(user.balance);
-
-    // 2. Rate limit: max 10 trades per minute
-    const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
-    const { count: recentCount } = await db
-      .from('trades')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('created_at', windowStart);
-    if ((recentCount ?? 0) >= RATE_LIMIT_TRADES) {
-      return { success: false, error: `Rate limit: max ${RATE_LIMIT_TRADES} trades per minute` };
-    }
-
-    // 3. Player
-    const { data: player, error: pe } = await db.from('players').select('*').eq('id', req.player_id).single();
-    if (pe || !player) return { success: false, error: 'Player not found' };
-    const price = Number(player.current_price);
-    const poolX = Number(player.pool_x);
-    const poolY = Number(player.pool_y);
-
-    // 4. Current position
-    const { data: pos } = await db
-      .from('positions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('player_id', req.player_id)
-      .maybeSingle();
-    const oldSize = pos ? normalizePosition(Number(pos.position_size)) : 0;
-    const oldAvg = pos ? Number(pos.avg_entry_price) : 0;
-
-    // 5. AMM impact
-    const absDollars = Math.abs(req.dollars);
-    if (absDollars > TRADE.max_amount) return { success: false, error: `Max trade $${TRADE.max_amount}` };
-    const fee = absDollars * TRADE.fee_rate;
-    const netDollars = absDollars - fee;
-    const side = req.dollars > 0 ? 'buy' : 'sell';
-    const amm = computeAMMImpact(poolX, poolY, netDollars, side);
-    if (amm.slippage > TRADE.max_slippage) {
-      return { success: false, error: `Slippage too high (${(amm.slippage * 100).toFixed(1)}%)` };
-    }
-
-    const effPrice = amm.effectivePrice;
-    // Use amm.qty (exact tokens out for buys, exact tokens in for sells)
-    // This eliminates the netDollars/effPrice asymmetry on the sell side
-    const delta = req.dollars > 0 ? amm.qty : -amm.qty;
-
-    // Reject dust trades: qty rounded to 0 would charge a fee with no position change
-    if (Math.abs(delta) < EPSILON) {
-      return { success: false, error: 'Trade amount too small' };
-    }
-
-    let newSize = normalizePosition(oldSize + delta);
-
-    // 6. P&L and margin accounting
-    let realizedPnl = 0;
-    let marginChange = 0;
-
-    const isReducing = oldSize !== 0 && Math.sign(delta) !== Math.sign(oldSize);
-    const isIncreasing = !isReducing || Math.abs(delta) > Math.abs(oldSize);
-
-    if (isReducing) {
-      const closedQty = Math.min(Math.abs(delta), Math.abs(oldSize));
-      // P&L realized at execution price (effPrice), not mark price — prevents platform
-      // from creating/destroying money proportional to slippage on every close
-      realizedPnl = (effPrice - oldAvg) * closedQty * Math.sign(oldSize);
-      // Margin released at entry price (oldAvg) — returns exactly what was locked,
-      // not a mark-to-market amount that inflates/deflates with price movements
-      marginChange += closedQty * oldAvg * MARGIN.initial;
-    }
-
-    if (isIncreasing) {
-      const openQty = isReducing ? Math.abs(delta) - Math.abs(oldSize) : Math.abs(delta);
-      if (openQty > 0) marginChange -= openQty * effPrice * MARGIN.initial;
-    }
-
-    const newBal = parseFloat((bal + marginChange - fee + realizedPnl).toFixed(2));
-    if (newBal < 0) {
-      return {
-        success: false,
-        error: `Insufficient funds. Trade requires $${(-marginChange + fee).toFixed(2)}, you have $${bal.toFixed(2)}`,
-      };
-    }
-
-    // 7. New average entry price
-    let newAvg: number;
-    if (newSize === 0) {
-      newAvg = 0;
-    } else if (isReducing && Math.abs(delta) > Math.abs(oldSize)) {
-      newAvg = effPrice;
-    } else if (Math.sign(newSize) === Math.sign(oldSize) && oldSize !== 0) {
-      newAvg = (Math.abs(oldSize) * oldAvg + Math.abs(delta) * effPrice) / (Math.abs(oldSize) + Math.abs(delta));
-    } else if (isReducing) {
-      newAvg = oldAvg;
-    } else {
-      newAvg = effPrice;
-    }
-
-    // 8. Margin check (only enforced when increasing position)
-    const { data: allPos } = await db
-      .from('positions')
-      .select('*, player:players(current_price)')
-      .eq('user_id', userId);
-    const postPositions = (allPos || [])
-      .filter((p: any) => p.player_id !== req.player_id)
-      .map((p: any) => ({
-        size: normalizePosition(Number(p.position_size)),
-        price: Number(p.player?.current_price || 0),
-      }))
-      .filter((p: any) => p.size !== 0);
-    if (newSize !== 0) postPositions.push({ size: newSize, price });
-    const marginCheck = calcMargin(newBal, postPositions);
-
-    // The newBal < 0 check above is the correct and sufficient margin gate.
-    // newBal is cash AFTER this trade's margin was deducted, so newBal >= 0
-    // means the user has paid all required margin. No secondary check needed.
-
-    // 9. Atomic balance update — optimistic concurrency lock
-    // Only succeeds if balance hasn't changed since we read it (prevents race condition / double-spend)
-    const { data: updatedUser } = await db
-      .from('users')
-      .update({ balance: newBal, updated_at: new Date().toISOString() })
-      .eq('id', userId)
-      .eq('balance', parseFloat(bal.toFixed(2)))
-      .select('balance')
-      .single();
-
-    if (!updatedUser) {
-      return { success: false, error: 'Trade conflict — balance changed concurrently, please retry' };
-    }
-
-    // 10. Update position
-    if (newSize === 0) {
-      await db.from('positions').delete().eq('user_id', userId).eq('player_id', req.player_id);
-    } else {
-      await db.from('positions').upsert(
-        {
-          user_id: userId,
-          player_id: req.player_id,
-          position_size: newSize,
-          avg_entry_price: parseFloat(newAvg.toFixed(2)),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,player_id' }
-      );
-    }
-
-    // 11. Record trade
-    const { data: trade } = await db
-      .from('trades')
-      .insert({
-        user_id: userId,
-        player_id: req.player_id,
-        size: normalizePosition(delta),
-        price: parseFloat(effPrice.toFixed(2)),
-        pnl: parseFloat(realizedPnl.toFixed(2)),
-      })
-      .select()
-      .single();
-
-    // 12. Update AMM pools AND current_price to new AMM spot
-    // Keeps pool spot price and current_price in sync — eliminates the tick/trade divergence arb
-    const newSpot = amm.newX > 0 ? parseFloat((amm.newY / amm.newX).toFixed(2)) : price;
-    await db
-      .from('players')
-      .update({
-        pool_x: parseFloat(amm.newX.toFixed(4)),
-        pool_y: parseFloat(amm.newY.toFixed(4)),
-        current_price: newSpot,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', req.player_id);
-
-    console.log(
-      `TRADE OK user=${userId} delta=${delta.toFixed(6)} newSize=${newSize.toFixed(6)} ` +
-      `effPrice=${effPrice.toFixed(2)} newSpot=${newSpot} pnl=${realizedPnl.toFixed(2)} bal=${newBal}`
-    );
-
-    return { success: true, trade, new_balance: newBal, margin: marginCheck };
+    if (req.side === 'buy') return await executeBuy(userId, req);
+    if (req.side === 'sell') return await executeSell(userId, req);
+    return { success: false, error: 'Invalid side — must be buy or sell' };
   } catch (e: any) {
     console.error('TRADE ERR:', e);
     return { success: false, error: e.message };
   }
 }
 
-// ============================================================
-// FUTURES: Daily Mark-to-Market
-// Called once per UTC calendar day from the tick route.
-// Variation margin = (mark_price − last_settlement_price) × size
-// flows directly into / out of the user's cash balance.
-// This is the core futures mechanic: P&L is realized daily,
-// not only when the position is closed.
-// ============================================================
-export async function runDailyMTM(): Promise<{ settled_users: number; total_variation_margin: number }> {
-  const db = serverSupa();
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD UTC
-
-  // Only process positions that have not yet been settled today
-  const { data: positions } = await db
-    .from('positions')
-    .select('*, player:players(current_price)')
-    .neq('position_size', 0);
-
-  if (!positions?.length) return { settled_users: 0, total_variation_margin: 0 };
-
-  // Filter to positions not yet settled today
-  const unsettled = positions.filter((p: any) => p.last_settlement_date !== today);
-  if (!unsettled.length) return { settled_users: 0, total_variation_margin: 0 };
-
-  // Group by user
-  const byUser: Record<string, any[]> = {};
-  for (const p of unsettled) {
-    const size = normalizePosition(Number(p.position_size));
-    if (size === 0) continue;
-    if (!byUser[p.user_id]) byUser[p.user_id] = [];
-    byUser[p.user_id].push({ ...p, position_size: size });
-  }
-
-  let settledUsers = 0;
-  let totalVariationMargin = 0;
-
-  for (const [uid, poss] of Object.entries(byUser)) {
-    const { data: u } = await db.from('users').select('balance').eq('id', uid).single();
-    if (!u) continue;
-    let variationMargin = 0;
-
-    for (const p of poss) {
-      const size = p.position_size as number;
-      const markPrice = Number(p.player?.current_price || 0);
-      // Use last_settlement_price if set, otherwise fall back to avg_entry_price (first day)
-      const prevSettle = p.last_settlement_price !== null
-        ? Number(p.last_settlement_price)
-        : Number(p.avg_entry_price);
-
-      const dailyPnl = (markPrice - prevSettle) * size;
-      variationMargin += dailyPnl;
-
-      // Advance settlement price to today's mark
-      await db.from('positions').update({
-        last_settlement_price: parseFloat(markPrice.toFixed(2)),
-        last_settlement_date: today,
-        updated_at: new Date().toISOString(),
-      }).eq('id', p.id);
-    }
-
-    // Credit / debit variation margin to cash balance (never below 0)
-    if (Math.abs(variationMargin) > 0.005) {
-      const newBal = Math.max(0, parseFloat((Number(u.balance) + variationMargin).toFixed(2)));
-      await db.from('users').update({
-        balance: newBal,
-        updated_at: new Date().toISOString(),
-      }).eq('id', uid);
-    }
-
-    totalVariationMargin += variationMargin;
-    settledUsers++;
-  }
-
-  console.log(`DAILY MTM: ${settledUsers} users, variation margin flow: $${totalVariationMargin.toFixed(2)}`);
-  return { settled_users: settledUsers, total_variation_margin: totalVariationMargin };
-}
-
-// Force-close all open positions at current price.
-// Called by the tick route at/after settlement_date. Idempotent — safe to call multiple times.
+// ─── Season Settlement ────────────────────────────────────
+// Called at season end. Credits each user for remaining shares
+// at the player's final_settlement_price (or current_price).
+// Idempotent — safe to call multiple times.
+// ─────────────────────────────────────────────────────────
 export async function runSettlement() {
   const db = serverSupa();
-  const { data: positions } = await db
-    .from('positions')
-    .select('*, player:players(current_price)')
-    .neq('position_size', 0);
 
-  if (!positions?.length) return { settled: 0 };
+  // Only settle active players
+  const { data: players } = await db.from('players').select('*').eq('settlement_status', 'active');
+  if (!players?.length) return { settled_players: 0, settled_users: 0 };
 
-  const byUser: Record<string, any[]> = {};
-  for (const p of positions) {
-    const size = normalizePosition(Number(p.position_size));
-    if (size === 0) continue;
-    if (!byUser[p.user_id]) byUser[p.user_id] = [];
-    byUser[p.user_id].push({ ...p, position_size: size });
-  }
+  let settledPlayers = 0, settledUsers = 0;
 
-  let settled = 0;
-  for (const [uid, poss] of Object.entries(byUser)) {
-    const { data: u } = await db.from('users').select('balance').eq('id', uid).single();
-    if (!u) continue;
-    let equity = Number(u.balance);
+  for (const player of players) {
+    const settlementPrice = Number(player.final_settlement_price ?? player.current_price);
 
-    for (const p of poss) {
-      const size = p.position_size;
-      const curPrice = Number(p.player?.current_price || 0);
-      const avg = Number(p.avg_entry_price);
-      const pnl = (curPrice - avg) * size;
-      const releasedMargin = Math.abs(size) * avg * MARGIN.initial;
+    // Mark player as settled
+    await db.from('players').update({
+      settlement_status: 'settled',
+      final_settlement_price: settlementPrice,
+      updated_at: new Date().toISOString(),
+    }).eq('id', player.id);
 
-      // Idempotency: only zero out a position that is still open.
-      // If two concurrent settlement calls both read the same positions, only
-      // the first to write will find position_size != 0 and proceed.
-      const { data: settledPos } = await db.from('positions')
-        .update({ position_size: 0, avg_entry_price: 0, updated_at: new Date().toISOString() })
-        .eq('id', p.id)
-        .neq('position_size', 0)
-        .select('id')
-        .single();
+    // Find all users holding this player
+    const { data: positions } = await db.from('positions').select('*').eq('player_id', player.id).gt('shares_owned', 0);
+    if (!positions?.length) { settledPlayers++; continue; }
 
-      if (!settledPos) continue; // concurrent call already settled this position
+    for (const pos of positions) {
+      const shares = snap(Number(pos.shares_owned));
+      if (shares <= 0) continue;
 
-      equity += releasedMargin + pnl;
+      const proceeds = shares * settlementPrice;
+      const realizedPnl = (settlementPrice - Number(pos.avg_cost_basis)) * shares;
+
+      // Credit user cash
+      const { data: u } = await db.from('users').select('balance').eq('id', pos.user_id).single();
+      if (!u) continue;
+      const newBal = parseFloat((Number(u.balance) + proceeds).toFixed(2));
+
+      const { data: updatedUser } = await db.from('users')
+        .update({ balance: newBal, updated_at: new Date().toISOString() })
+        .eq('id', pos.user_id).eq('balance', parseFloat(Number(u.balance).toFixed(2)))
+        .select('balance').single();
+      if (!updatedUser) continue; // concurrent call already settled
+
+      // Record settlement trade
       await db.from('trades').insert({
-        user_id: uid,
-        player_id: p.player_id,
-        size: normalizePosition(-size),
-        price: curPrice,
-        pnl: parseFloat(pnl.toFixed(2)),
+        user_id: pos.user_id, player_id: player.id, side: 'settlement',
+        shares, price: settlementPrice,
+        total_value: parseFloat(proceeds.toFixed(2)),
+        realized_pnl: parseFloat(realizedPnl.toFixed(2)),
       });
+
+      // Zero out position
+      await db.from('positions').delete().eq('id', pos.id);
+      settledUsers++;
     }
 
-    const finalBal = Math.max(0, parseFloat(equity.toFixed(2)));
-    await db.from('users').update({ balance: finalBal, updated_at: new Date().toISOString() }).eq('id', uid);
-    settled++;
+    settledPlayers++;
   }
 
-  console.log(`SETTLEMENT COMPLETE: ${settled} users settled`);
-  return { settled };
-}
-
-export async function checkLiquidations() {
-  const db = serverSupa();
-  const { data: positions } = await db
-    .from('positions')
-    .select('*, player:players(current_price)')
-    .neq('position_size', 0);
-  if (!positions?.length) return [];
-
-  const byUser: Record<string, any[]> = {};
-  for (const p of positions) {
-    const normalizedSize = normalizePosition(Number(p.position_size));
-    if (normalizedSize === 0) {
-      await db
-        .from('positions')
-        .update({ position_size: 0, avg_entry_price: 0, updated_at: new Date().toISOString() })
-        .eq('id', p.id);
-      continue;
-    }
-    if (!byUser[p.user_id]) byUser[p.user_id] = [];
-    byUser[p.user_id].push({ ...p, position_size: normalizedSize });
-  }
-
-  const liquidated: string[] = [];
-  for (const [uid, poss] of Object.entries(byUser)) {
-    const { data: u } = await db.from('users').select('balance').eq('id', uid).single();
-    if (!u) continue;
-    let equity = Number(u.balance);
-    const posArr = poss.map((p: any) => ({
-      size: p.position_size,
-      price: Number(p.player?.current_price || 0),
-    }));
-    const m = calcMargin(equity, posArr);
-
-    if (m.health === 'liquidation') {
-      console.log(`LIQUIDATION user=${uid} equity=${equity.toFixed(2)} maint=${m.maintenance_margin.toFixed(2)}`);
-
-      for (const p of poss) {
-        const size = p.position_size;
-        const curPrice = Number(p.player?.current_price || 0);
-        const avg = Number(p.avg_entry_price);
-        const pnl = (curPrice - avg) * size;
-        const releasedMargin = Math.abs(size) * avg * MARGIN.initial;
-        equity += releasedMargin + pnl;
-
-        await db.from('trades').insert({
-          user_id: uid,
-          player_id: p.player_id,
-          size: normalizePosition(-size),
-          price: curPrice,
-          pnl: parseFloat(pnl.toFixed(2)),
-        });
-
-        await db.from('positions').update({
-          position_size: 0,
-          avg_entry_price: 0,
-          updated_at: new Date().toISOString(),
-        }).eq('id', p.id);
-      }
-
-      const finalBal = Math.max(0, parseFloat(equity.toFixed(2)));
-      await db.from('users').update({ balance: finalBal, updated_at: new Date().toISOString() }).eq('id', uid);
-      console.log(`LIQUIDATION SETTLED user=${uid} finalBal=${finalBal}`);
-      liquidated.push(uid);
-    }
-  }
-  return liquidated;
+  console.log(`SETTLEMENT COMPLETE: ${settledPlayers} players, ${settledUsers} user-positions settled`);
+  return { settled_players: settledPlayers, settled_users: settledUsers };
 }

@@ -37,21 +37,22 @@ export default function ProfileView({ onSignOut }: { onSignOut: () => void }) {
         {(!trades || trades.length === 0) ? <div className="text-center py-8 text-lk-dim text-sm">No trades yet</div> : (
           <div>
             {trades.slice(0, 30).map((t: any, i: number) => {
-              const isLong = t.size > 0;
+              const isBuy = t.side === 'buy';
+              const isSettlement = t.side === 'settlement';
               return (
                 <div key={t.id} className={`flex items-center gap-3 py-2.5 ${i<Math.min(trades.length,30)-1?'border-b border-lk-border':''}`}>
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isLong?'bg-lk-accent-dim':'bg-lk-red-dim'}`}>
-                    <svg width="14" height="14" fill="none" stroke={isLong?'#00d4aa':'#ff4757'} strokeWidth="2" viewBox="0 0 24 24">
-                      {isLong ? <path d="M12 19V5M5 12l7-7 7 7"/> : <path d="M12 5v14M19 12l-7 7-7-7"/>}
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isBuy?'bg-lk-accent-dim':isSettlement?'bg-lk-accent-dim/50':'bg-lk-red-dim'}`}>
+                    <svg width="14" height="14" fill="none" stroke={isBuy?'#00d4aa':isSettlement?'#00d4aa':'#ff4757'} strokeWidth="2" viewBox="0 0 24 24">
+                      {isBuy ? <path d="M12 19V5M5 12l7-7 7 7"/> : <path d="M12 5v14M19 12l-7 7-7-7"/>}
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate">{isLong ? 'Long' : 'Short'} {t.player?.name || 'Unknown'}</div>
-                    <div className="text-[11px] text-lk-dim">{Math.abs(t.size).toFixed(4)} @ ${t.price.toFixed(2)}</div>
+                    <div className="text-xs font-medium truncate capitalize">{t.side} {t.player?.name || 'Unknown'}</div>
+                    <div className="text-[11px] text-lk-dim">{Number(t.shares).toFixed(4)} shares @ ${Number(t.price).toFixed(2)}</div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <div className={`text-xs font-medium ${(t.pnl||0)>=0?'text-lk-accent':'text-lk-red'}`}>
-                      {t.pnl !== 0 ? ((t.pnl>=0?'+':'')+fmt(t.pnl)) : fmt(Math.abs(t.size * t.price))}
+                    <div className={`text-xs font-medium ${(t.realized_pnl||0)>=0?'text-lk-accent':'text-lk-red'}`}>
+                      {t.realized_pnl !== 0 ? ((t.realized_pnl>=0?'+':'')+fmt(t.realized_pnl)) : fmt(Number(t.total_value||0))}
                     </div>
                     <div className="text-[10px] text-lk-muted">{new Date(t.created_at).toLocaleDateString()}</div>
                   </div>
@@ -64,7 +65,7 @@ export default function ProfileView({ onSignOut }: { onSignOut: () => void }) {
 
       <Card className="bg-lk-red/[0.03] border-lk-red/10">
         <Label>Settlement</Label>
-        <div className="text-sm leading-relaxed">Contracts settle <span className="text-lk-accent font-semibold">June 15, 2026</span>. Payout = position_size × final value.</div>
+        <div className="text-sm leading-relaxed">All remaining share holdings settle automatically on <span className="text-lk-accent font-semibold">June 15, 2026</span> at each player's final season value.</div>
         <div className="text-xl font-bold text-lk-accent mt-3 font-mono">{countdown}</div>
       </Card>
     </div>

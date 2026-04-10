@@ -1,4 +1,5 @@
--- LAKSH v2 Schema — Run after: DROP TABLE IF EXISTS price_history, trades, positions, players, users CASCADE;
+-- LAKSH v3 Schema — Buy/Sell Share Market with Season Settlement
+-- Run after: DROP TABLE IF EXISTS price_history, trades, positions, players, users CASCADE;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -19,47 +20,46 @@ CREATE TABLE players (
   previous_price DECIMAL(10,2) NOT NULL DEFAULT 100.00,
   price_change_24h DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   price_change_pct_24h DECIMAL(8,2) NOT NULL DEFAULT 0.00,
+  -- expected_value: raw EV score 0–1000 (used internally for pricing)
   expected_value DECIMAL(10,2) NOT NULL DEFAULT 500.00,
+  -- expected_final_value: projected season-end settlement price in dollars
+  expected_final_value DECIMAL(10,2) NOT NULL DEFAULT 500.00,
   volatility DECIMAL(8,4) NOT NULL DEFAULT 0.0500,
   ppg DECIMAL(6,2) NOT NULL DEFAULT 0, apg DECIMAL(6,2) NOT NULL DEFAULT 0,
   rpg DECIMAL(6,2) NOT NULL DEFAULT 0, efficiency DECIMAL(8,2) NOT NULL DEFAULT 0,
   games_played INTEGER NOT NULL DEFAULT 0,
   pool_x DECIMAL(14,4) NOT NULL DEFAULT 10000, pool_y DECIMAL(14,4) NOT NULL DEFAULT 10000,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Season settlement
+  final_settlement_price DECIMAL(10,2) DEFAULT NULL,
+  settlement_status TEXT NOT NULL DEFAULT 'active' CHECK (settlement_status IN ('active', 'settled')),
   -- BallDontLie integration
-  bdl_player_id INTEGER DEFAULT NULL,       -- numeric ID from api.balldontlie.io
-  stats_synced_at TIMESTAMPTZ DEFAULT NULL, -- when stats were last fetched from BDL
+  bdl_player_id INTEGER DEFAULT NULL,
+  stats_synced_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Migration for existing databases:
--- ALTER TABLE players ADD COLUMN IF NOT EXISTS bdl_player_id INTEGER DEFAULT NULL;
--- ALTER TABLE players ADD COLUMN IF NOT EXISTS stats_synced_at TIMESTAMPTZ DEFAULT NULL;
-
+-- Holdings: shares owned by each user in each player
 CREATE TABLE positions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  position_size DECIMAL(14,6) NOT NULL DEFAULT 0,
-  avg_entry_price DECIMAL(10,2) NOT NULL DEFAULT 0,
-  -- Futures: daily mark-to-market settlement tracking
-  last_settlement_price DECIMAL(10,2) DEFAULT NULL,  -- mark price at last daily MTM
-  last_settlement_date DATE DEFAULT NULL,             -- UTC date of last daily MTM
+  shares_owned DECIMAL(14,6) NOT NULL DEFAULT 0 CHECK (shares_owned >= 0),
+  avg_cost_basis DECIMAL(10,2) NOT NULL DEFAULT 0,   -- weighted average purchase price per share
+  realized_pnl DECIMAL(12,2) NOT NULL DEFAULT 0,     -- cumulative realized P&L from sells
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(user_id, player_id)
 );
-
--- Migration for existing databases:
--- ALTER TABLE positions ADD COLUMN IF NOT EXISTS last_settlement_price DECIMAL(10,2) DEFAULT NULL;
--- ALTER TABLE positions ADD COLUMN IF NOT EXISTS last_settlement_date DATE DEFAULT NULL;
 
 CREATE TABLE trades (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   player_id UUID NOT NULL REFERENCES players(id) ON DELETE CASCADE,
-  size DECIMAL(14,6) NOT NULL,
+  side TEXT NOT NULL CHECK (side IN ('buy', 'sell', 'settlement')),
+  shares DECIMAL(14,6) NOT NULL,
   price DECIMAL(10,2) NOT NULL,
-  pnl DECIMAL(12,2) NOT NULL DEFAULT 0,
+  total_value DECIMAL(12,2) NOT NULL,   -- shares * price
+  realized_pnl DECIMAL(12,2) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
