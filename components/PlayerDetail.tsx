@@ -54,7 +54,7 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
   const lo = chart.length ? Math.min(...chart.map(d => d.price)) : player.current_price;
   const up = (player.price_change_pct_24h || 0) >= 0;
 
-  const settlementDate = new Date(SEASON.settlement_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const settlementDate = new Date(SEASON.settlement_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   const efv = player.expected_final_value || 0;
   const settled = player.settlement_status === 'settled';
 

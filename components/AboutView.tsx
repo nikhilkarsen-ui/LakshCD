@@ -1,10 +1,12 @@
 'use client';
 import { Card, Label } from './ui';
+import LakshLogo from './LakshLogo';
 import { SEASON } from '@/config/constants';
-import { useCountdown } from '@/hooks';
+import { useCountdown, usePortfolio } from '@/hooks';
+import { fmt, fmtPct } from './ui';
 
 const settlementDate = new Date(SEASON.settlement_date).toLocaleDateString('en-US', {
-  month: 'long', day: 'numeric', year: 'numeric',
+  month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC',
 });
 
 const HOW_IT_WORKS = [
@@ -63,13 +65,17 @@ const GLOSSARY = [
 
 export default function AboutView() {
   const countdown = useCountdown(SEASON.settlement_date);
+  const { portfolio } = usePortfolio();
+  const totalPnl = portfolio?.total_pnl ?? null;
+  const totalPnlPct = portfolio?.total_pnl_pct ?? null;
+  const up = (totalPnl ?? 0) >= 0;
 
   return (
     <div className="p-4 animate-fade-in space-y-3 pb-8">
 
       {/* Brand header */}
       <div className="flex items-center gap-3 pt-2 pb-1">
-        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-lk-accent to-emerald-500 flex items-center justify-center text-lk-bg font-extrabold text-xl flex-shrink-0">L</div>
+        <LakshLogo className="w-11 h-11 flex-shrink-0" />
         <div>
           <div className="font-bold text-lg leading-tight">Laksh</div>
           <div className="text-xs text-lk-dim">Buy and sell player shares. Settle at season end.</div>
@@ -81,16 +87,43 @@ export default function AboutView() {
         Laksh is a simulated NBA player share market. Each player has a live share price — the market's collective estimate of their final season value. Buy shares in players you believe in, sell when you want, and hold through to settlement on {settlementDate}.
       </p>
 
-      {/* Settlement countdown */}
-      <div className="rounded-2xl border border-lk-accent/20 bg-lk-accent/5 p-4 flex items-center justify-between gap-4">
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Season settlement</div>
-          <div className="font-semibold text-sm">{settlementDate}</div>
-          <div className="text-[11px] text-lk-dim mt-0.5">All remaining shares convert to cash automatically</div>
+      {/* Settlement + P&L row */}
+      <div className="grid grid-cols-2 gap-2">
+        {/* Settlement countdown */}
+        <div className="rounded-2xl border border-lk-accent/20 bg-lk-accent/5 p-4 flex flex-col justify-between gap-2">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Season settlement</div>
+            <div className="font-semibold text-sm">{settlementDate}</div>
+            <div className="text-[11px] text-lk-dim mt-0.5">Shares auto-convert to cash</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Countdown</div>
+            <div className="font-mono text-sm font-bold text-lk-accent">{countdown}</div>
+          </div>
         </div>
-        <div className="text-right flex-shrink-0">
-          <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Countdown</div>
-          <div className="font-mono text-sm font-bold text-lk-accent">{countdown}</div>
+
+        {/* Live total P&L */}
+        <div className={`rounded-2xl border p-4 flex flex-col justify-between gap-2 ${up ? 'border-lk-accent/20 bg-lk-accent/5' : 'border-lk-red/20 bg-lk-red/5'}`}>
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Your Total P&amp;L</div>
+            {totalPnl === null ? (
+              <div className="text-sm text-lk-dim">—</div>
+            ) : (
+              <div className={`font-bold text-xl leading-tight ${up ? 'text-lk-accent' : 'text-lk-red'}`}>
+                {up ? '+' : ''}{fmt(totalPnl)}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Return</div>
+            {totalPnlPct === null ? (
+              <div className="text-sm text-lk-dim">—</div>
+            ) : (
+              <div className={`font-mono text-sm font-bold ${up ? 'text-lk-accent' : 'text-lk-red'}`}>
+                {fmtPct(totalPnlPct)}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -100,8 +133,6 @@ export default function AboutView() {
           { label: 'Starting cash', value: '$10,000' },
           { label: 'Trade fee', value: '0.1%' },
           { label: 'Price updates', value: 'Every 5s' },
-          { label: 'Players', value: '15 NBA' },
-          { label: 'Settlement', value: 'Jun 15 \'26' },
         ].map(k => (
           <div key={k.label} className="rounded-xl border border-lk-border bg-lk-card p-3 text-center">
             <div className="text-[10px] text-lk-dim mb-1">{k.label}</div>

@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { Toast } from './ui';
+import LakshLogo from './LakshLogo';
 
 export default function AuthForm({ onSignIn }: { onSignIn: (email: string, password: string) => Promise<any> }) {
   const [email, setEmail] = useState('');
@@ -29,9 +30,9 @@ export default function AuthForm({ onSignIn }: { onSignIn: (email: string, passw
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
       <div className="w-full max-w-sm">
         <div className="text-center mb-10">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-lk-accent to-emerald-500 flex items-center justify-center mx-auto mb-4 text-lk-bg font-extrabold text-2xl shadow-lg shadow-lk-accent/20">L</div>
+          <LakshLogo className="w-16 h-16 mx-auto mb-4" />
           <h1 className="text-2xl font-bold tracking-wider">Laksh</h1>
-          <p className="text-xs text-lk-dim tracking-[3px] uppercase mt-1">The 24/7 Sports Exchange</p>
+          <p className="text-xs text-lk-dim tracking-[3px] uppercase mt-1">The 24/7 Sports Market</p>
         </div>
 
         <form onSubmit={submit} className="space-y-4">

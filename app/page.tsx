@@ -128,15 +128,11 @@ function LandingPage({ onStart }: { onStart: () => void }) {
             <div className="flex items-center gap-3">
               <LakshLogo className="w-10 h-10" />
               <div>
-                <span className="text-sm font-semibold uppercase tracking-[0.22em] text-lk-accent/90">Laksh</span>
-                <p className="text-[10px] text-lk-dim leading-none mt-0.5">The 24/7 sports market</p>
+                <div className="text-lg font-bold tracking-wider text-lk-text">Laksh</div>
+                <div className="text-[9px] text-lk-dim tracking-[3px] uppercase -mt-0.5">The 24/7 Sports Market</div>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => document.getElementById('waitlist')?.scrollIntoView({ behavior: 'smooth' })}
-                className="rounded-full border border-white/12 bg-white/5 px-4 py-2.5 text-sm text-white transition hover:bg-white/10">
-                Join Waitlist
-              </button>
               <button onClick={onStart} className="rounded-full bg-lk-accent px-5 py-2.5 text-sm font-semibold text-black transition hover:brightness-110">
                 Sign In
               </button>
@@ -184,15 +180,10 @@ function LandingPage({ onStart }: { onStart: () => void }) {
                   Buy shares you believe in. Sell when you're ready. Everything settles automatically at season end.
                 </p>
 
-                <div className="flex flex-wrap gap-3">
-                  <button onClick={onStart} className="rounded-full bg-lk-accent px-7 py-3.5 text-sm font-semibold text-black transition hover:brightness-110">
-                    Start Trading
-                  </button>
-                  <button
-                    onClick={() => document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' })}
-                    className="rounded-full border border-white/12 bg-white/5 px-7 py-3.5 text-sm text-white transition hover:bg-white/10">
-                    How it works
-                  </button>
+                <div id="waitlist" className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 max-w-md">
+                  <p className="text-xs uppercase tracking-[0.4em] text-lk-accent mb-2">Beta access</p>
+                  <p className="text-sm text-lk-dim mb-4">Drop your email and we'll let you in when spots open. Everyone starts with $10,000 in virtual cash.</p>
+                  <WaitlistForm />
                 </div>
 
                 {/* Countdown */}
@@ -329,27 +320,10 @@ function LandingPage({ onStart }: { onStart: () => void }) {
             </div>
           </Reveal>
 
-          {/* ── Waitlist + CTA ── */}
-          <section className="py-20 border-t border-white/5">
-            <div className="grid gap-10 lg:grid-cols-2 items-center">
-              <div>
-                <p className="text-xs uppercase tracking-[0.4em] text-lk-accent mb-3">Beta access</p>
-                <h2 className="text-3xl font-bold mb-4">Join the waitlist.</h2>
-                <p className="text-sm leading-7 text-lk-dim">
-                  Laksh is in private beta. Drop your email and we'll let you in when spots open.
-                  Everyone starts with $10,000 in virtual cash.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                <WaitlistForm />
-              </div>
-            </div>
-          </section>
-
           {/* ── CTA ── */}
           <section className="py-20 border-t border-white/5 text-center">
-            <h2 className="text-4xl font-black mb-4">Ready to trade?</h2>
-            <p className="text-lk-dim text-sm mb-8">Sign in and start buying player shares. Settlement is June 15, 2026.</p>
+            <h2 className="text-4xl font-black mb-4">Already have access?</h2>
+            <p className="text-lk-dim text-sm mb-8">Sign in and start trading player shares. Settlement is June 15, 2026.</p>
             <button onClick={onStart} className="landing-glow-btn inline-flex rounded-full bg-lk-accent px-10 py-4 text-sm font-semibold text-black transition hover:brightness-110">
               Sign In
             </button>
