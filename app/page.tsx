@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { AuthProvider, useAuth, usePlayers, usePriceTicker, usePortfolio, useCountdown } from '@/hooks';
+import { AuthProvider, useAuth, usePlayers, usePortfolio, useCountdown } from '@/hooks';
 import { Player } from '@/types';
 import AuthForm from '@/components/AuthForm';
 import WaitlistForm from '@/components/WaitlistForm';
@@ -347,7 +347,7 @@ function Shell() {
   const [tab, setTab] = useState('home');
   const [pid, setPid] = useState<string | null>(null);
   const [view, setView] = useState<'landing' | 'auth'>('landing');
-  usePriceTicker();
+
 
   useEffect(() => {
     if (!user || !session?.access_token) { setApprovalState('unknown'); return; }

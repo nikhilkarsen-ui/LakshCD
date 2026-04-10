@@ -1,61 +1,87 @@
 // ============================================================
-// Price tick: runs every 5 seconds.
-// - Updates each active player's price (drift toward EFV)
-// - Syncs AMM pools to new price
-// - At season end: triggers settlement instead of ticking
+// Price tick — runs every 5 seconds (Pricing Engine v3).
 //
-// Auth: CRON_SECRET header (server scheduler) OR valid user JWT
+// Per tick:
+//   1. Compute oracle FV with Bayesian shrinkage + availability discount
+//   2. Compute 30-min TWAP and EWMA volatility from price history
+//   3. Drift AMM spot toward FV (rubber-band strengthens far from FV)
+//   4. Blend: 15% AMM + 65% FV + 20% TWAP (oracle-dominant)
+//   5. Recalibrate AMM pools to blended price
+//   6. Evaluate momentum circuit breaker (set flag if >8% rise / 30min)
+//   7. Write blended price to price_history
+//   8. Prune history older than 7 days
+//
+// Auth: x-cron-secret header (scheduler) OR valid user JWT
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { serverSupa } from '@/lib/supabase';
-import { tick } from '@/lib/pricing';
+import { tick } from '@/lib/pricing-v3';
 import { runSettlement } from '@/lib/trading';
 import { getUser } from '@/lib/auth';
 import { Player, PricePoint } from '@/types';
-import { SEASON } from '@/config/constants';
+import { SEASON, PRICING_V3 as C } from '@/config/constants';
 export const dynamic = 'force-dynamic';
 
-const NF = ['current_price', 'previous_price', 'expected_value', 'expected_final_value', 'volatility', 'ppg', 'apg', 'rpg', 'efficiency', 'pool_x', 'pool_y'];
+const NF = [
+  'current_price', 'previous_price', 'expected_value', 'expected_final_value',
+  'fair_value', 'twap_price', 'twap_30m', 'volatility', 'market_depth',
+  'volume_24h', 'last_fee_rate', 'blend_w_amm', 'blend_w_fv', 'blend_w_twap',
+  'ppg', 'apg', 'rpg', 'efficiency', 'games_played',
+  'pool_x', 'pool_y', 'live_game_boost', 'prior_fv_score',
+];
 
 export async function POST(req: NextRequest) {
-  // Auth: signed cron secret (server scheduler) OR valid user JWT (browser)
   const cronSecret = req.headers.get('x-cron-secret');
-  const validCron = !!process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET;
+  const validCron  = !!process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET;
   if (!validCron) {
     const user = await getUser(req);
     if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   try {
-    // Settlement gate: once season ends, settle all remaining holdings
+    // Settlement gate
     if (Date.now() >= new Date(SEASON.settlement_date).getTime()) {
       const result = await runSettlement();
       return NextResponse.json({ success: true, settled: result, timestamp: new Date().toISOString() });
     }
 
     const db = serverSupa();
-    const { data: players } = await db.from('players').select('*').eq('is_active', true).eq('settlement_status', 'active');
-    if (!players?.length) return NextResponse.json({ error: 'No active players' }, { status: 500 });
-    for (const p of players) for (const f of NF) if (p[f] !== undefined) p[f] = Number(p[f]);
 
-    // Fetch recent price history for volatility + momentum computation
+    // ── Load active players ────────────────────────────────────────────────
+    const { data: players } = await db
+      .from('players')
+      .select('*')
+      .eq('is_active', true)
+      .eq('settlement_status', 'active');
+    if (!players?.length) return NextResponse.json({ error: 'No active players' }, { status: 500 });
+
+    for (const p of players)
+      for (const f of NF)
+        if (p[f] !== undefined && p[f] !== null) p[f] = Number(p[f]);
+
+    // ── Load price history — 60 ticks for vol/TWAP, older for momentum check
+    // Momentum looks back 30 min = 360 ticks at 5s cadence.
+    const historyLookback = new Date(Date.now() - 35 * 60 * 1000).toISOString(); // 35 min
     const { data: allHist } = await db
       .from('price_history')
       .select('*')
       .in('player_id', players.map((p: any) => p.id))
+      .gte('created_at', historyLookback)
       .order('created_at', { ascending: false })
-      .limit(30 * players.length);
+      .limit(500 * players.length);
 
     const histories: Record<string, PricePoint[]> = {};
     for (const h of allHist || []) {
-      h.price = Number(h.price); h.expected_value = Number(h.expected_value); h.volatility = Number(h.volatility);
+      h.price          = Number(h.price);
+      h.expected_value = Number(h.expected_value);
+      h.volatility     = Number(h.volatility);
       if (!histories[h.player_id]) histories[h.player_id] = [];
       histories[h.player_id].push(h);
     }
-    for (const k of Object.keys(histories)) histories[k].reverse();
+    for (const k of Object.keys(histories)) histories[k].reverse(); // oldest first
 
-    // Fetch 24h-ago prices for daily change
+    // ── 24h-ago prices for change% ────────────────────────────────────────
     const ago24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: prices24hAgo } = await db
       .from('price_history')
@@ -66,45 +92,80 @@ export async function POST(req: NextRequest) {
       .limit(players.length);
 
     const price24hMap: Record<string, number> = {};
-    for (const row of prices24hAgo || []) {
+    for (const row of prices24hAgo || [])
       if (!price24hMap[row.player_id]) price24hMap[row.player_id] = Number(row.price);
-    }
+
+    // ── 24h trade volume ─────────────────────────────────────────────────
+    const { data: volumes } = await db
+      .from('trades')
+      .select('player_id, total_value')
+      .in('player_id', players.map((p: any) => p.id))
+      .gte('created_at', ago24h)
+      .in('side', ['buy', 'sell']);
+
+    const volume24hMap: Record<string, number> = {};
+    for (const row of volumes || [])
+      volume24hMap[row.player_id] = (volume24hMap[row.player_id] ?? 0) + Number(row.total_value);
 
     const now = new Date().toISOString();
     const inserts: any[] = [];
 
+    // ── Tick each player ─────────────────────────────────────────────────
     for (const p of players) {
-      const t = tick(p as Player, histories[p.id] || []);
-      const prev = p.current_price;
+      const vol24h           = volume24hMap[p.id] ?? 0;
+      const lastTradeAt      = p.last_trade_at ? new Date(p.last_trade_at).getTime() : 0;
+      const timeSinceTradeMs = lastTradeAt > 0 ? Date.now() - lastTradeAt : 60 * 60 * 1000;
 
-      const price24hAgo = price24hMap[p.id] || prev;
-      const change24h = t.price - price24hAgo;
+      const t = tick(p as Player, histories[p.id] ?? [], vol24h, timeSinceTradeMs);
+
+      const prev         = p.current_price;
+      const price24hAgo  = price24hMap[p.id] ?? prev;
+      const change24h    = t.blendedPrice - price24hAgo;
       const changePct24h = price24hAgo > 0 ? (change24h / price24hAgo) * 100 : 0;
 
-      // Recalibrate AMM pools: preserve k, set spot = new price
-      const k = p.pool_x * p.pool_y;
-      const newPoolX = k > 0 ? Math.sqrt(k / t.price) : p.pool_x;
-      const newPoolY = k > 0 ? k / newPoolX : p.pool_y;
+      // Momentum circuit breaker management
+      const breakerUntil = t.momentumBreaker
+        ? new Date(Date.now() + C.momentum_cooldown_ms).toISOString()
+        : (p.momentum_breaker_until ?? null);
+      const breakerActive = t.momentumBreaker
+        ? true
+        : (p.momentum_breaker_active && p.momentum_breaker_until != null && Date.now() < new Date(p.momentum_breaker_until).getTime());
 
       await db.from('players').update({
-        current_price: t.price,
-        previous_price: prev,
-        price_change_24h: parseFloat(change24h.toFixed(2)),
-        price_change_pct_24h: parseFloat(changePct24h.toFixed(2)),
-        expected_value: t.ev,
-        expected_final_value: t.expectedFinalValue,
-        volatility: t.volatility,
-        pool_x: parseFloat(newPoolX.toFixed(4)),
-        pool_y: parseFloat(newPoolY.toFixed(4)),
-        updated_at: now,
+        current_price:             t.blendedPrice,
+        previous_price:            prev,
+        price_change_24h:          parseFloat(change24h.toFixed(2)),
+        price_change_pct_24h:      parseFloat(changePct24h.toFixed(2)),
+        fair_value:                t.fairValue,
+        expected_final_value:      t.fairValue,
+        expected_value:            t.evScore,
+        twap_price:                t.twap,
+        twap_30m:                  t.twap,
+        volatility:                t.volatility,
+        market_depth:              t.marketDepth,
+        volume_24h:                vol24h,
+        blend_w_amm:               t.weights.wAmm,
+        blend_w_fv:                t.weights.wFv,
+        blend_w_twap:              t.weights.wTwap,
+        pool_x:                    t.newPoolX,
+        pool_y:                    t.newPoolY,
+        momentum_breaker_active:   breakerActive,
+        momentum_breaker_until:    breakerUntil,
+        updated_at:                now,
       }).eq('id', p.id);
 
-      inserts.push({ player_id: p.id, price: t.price, expected_value: t.ev, volatility: t.volatility, created_at: now });
+      inserts.push({
+        player_id:      p.id,
+        price:          t.blendedPrice,
+        expected_value: t.evScore,
+        volatility:     t.volatility,
+        created_at:     now,
+      });
     }
 
     if (inserts.length) await db.from('price_history').insert(inserts);
 
-    // Prune history older than 7 days
+    // ── Prune history older than 7 days ───────────────────────────────────
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     await db.from('price_history').delete().lt('created_at', cutoff);
 

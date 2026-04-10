@@ -209,23 +209,6 @@ export function useTrade() {
   return { execute: exec, executing };
 }
 
-// --- Price ticker ---
-export function usePriceTicker() {
-  const tokenRef = useTokenRef();
-  useEffect(() => {
-    const t = async () => {
-      const token = tokenRef.current;
-      if (!token) return;
-      try {
-        await fetch('/api/prices/tick', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-      } catch {}
-    };
-    const d = setTimeout(t, 2000);
-    const i = setInterval(t, POLL.prices);
-    return () => { clearTimeout(d); clearInterval(i); };
-  }, [tokenRef]);
-}
-
 // --- Countdown (kept for any components that still use it) ---
 export function useCountdown(target: string) {
   const [s, setS] = useState('');

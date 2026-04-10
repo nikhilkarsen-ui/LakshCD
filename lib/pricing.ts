@@ -149,8 +149,18 @@ export function tick(player: Player, history: PricePoint[]) {
   const progress = seasonProgress();
   const alpha = C.drift_base + C.drift_season_boost * progress;
 
-  // Mean-reversion drift toward expected final value
-  const drift = alpha * (efv - cur);
+  // Live game boost: temporarily shifts the EFV target up or down based on
+  // today's box score vs the player's season average.
+  // Boost is -1..+1; live_boost_scale caps the max EFV shift (default 20%).
+  // Ignored once live_boost_expires_at has passed.
+  const boostActive =
+    player.live_boost_expires_at != null &&
+    Date.now() < new Date(player.live_boost_expires_at).getTime();
+  const boost = boostActive ? Number(player.live_game_boost ?? 0) : 0;
+  const boostedEfv = efv * (1 + boost * C.live_boost_scale);
+
+  // Mean-reversion drift toward (possibly boosted) expected final value
+  const drift = alpha * (boostedEfv - cur);
 
   // Small momentum contribution (trend-following)
   const momDelta = mom * cur * C.momentum_w;

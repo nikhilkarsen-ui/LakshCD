@@ -5,6 +5,10 @@
       "schedule": "*/1 * * * *"
     },
     {
+      "path": "/api/stats/ingest",
+      "schedule": "*/1 * * * *"
+    },
+    {
       "path": "/api/stats/sync",
       "schedule": "0 6 * * *"
     }

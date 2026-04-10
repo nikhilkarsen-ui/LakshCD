@@ -2,14 +2,43 @@ export interface Player {
   id: string; name: string; team: string; position: string;
   current_price: number; previous_price: number;
   price_change_24h: number; price_change_pct_24h: number;
-  expected_value: number;         // raw EV score 0–1000 (internal pricing input)
-  expected_final_value: number;   // projected season-end settlement price in dollars
+
+  // Pricing engine v3 fields
+  fair_value: number;             // oracle FV with Bayesian shrinkage + availability discount
+  twap_price: number;             // 30-min TWAP
+  twap_30m: number;               // alias for twap_price
+  market_depth: number;           // virtual liquidity depth in USD
+  blend_w_amm: number;            // last tick blend weight: AMM (typically ~15%)
+  blend_w_fv: number;             // last tick blend weight: FV  (typically ~65%)
+  blend_w_twap: number;           // last tick blend weight: TWAP (typically ~20%)
+  volume_24h: number;             // rolling 24h trade volume in USD
+  last_trade_at: string | null;   // timestamp of last completed trade
+  last_fee_rate: number;          // dynamic fee rate on last trade
+  prior_fv_score: number | null;  // player-specific Bayesian prior (0–1)
+  momentum_breaker_active: boolean;     // true if buying is paused
+  momentum_breaker_until: string | null; // ISO timestamp when breaker expires
+
+  // Legacy / kept in sync
+  expected_value: number;         // raw EV score 0–1000
+  expected_final_value: number;   // same as fair_value
   volatility: number;
-  ppg: number; apg: number; rpg: number; efficiency: number;
-  games_played: number; pool_x: number; pool_y: number;
+
+  // Stats
+  ppg: number; apg: number; rpg: number; efficiency: number; games_played: number;
+
+  // AMM pools
+  pool_x: number; pool_y: number;
+
+  // Settlement
   is_active: boolean;
   final_settlement_price: number | null;
   settlement_status: 'active' | 'settled';
+
+  // Live game boost
+  live_game_boost: number;
+  live_boost_expires_at: string | null;
+  live_stats_snapshot: { game_id: number; pts: number; ast: number; reb: number; stl: number; blk: number; tov: number } | null;
+
   created_at: string; updated_at: string;
 }
 
