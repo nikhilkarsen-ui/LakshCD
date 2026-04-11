@@ -16,7 +16,7 @@ export const PRICING = {
 } as const;
 
 // ── Pricing Engine v2 ─────────────────────────────────────────────────────────
-export const PRICING_V2 = {
+export const PRICING_V2: Record<string, number> = {
   // ── Fair Value Oracle ──────────────────────────────────────────────────────
   pts_w: 0.35, ast_w: 0.20, reb_w: 0.20, eff_w: 0.25,
   max_pts: 2800, max_ast: 900, max_reb: 1200, max_eff: 3000,
@@ -80,7 +80,7 @@ export const PRICING_V2 = {
   // ── TWAP window ──────────────────────────────────────────────────────────
   twap_window_ms: 5 * 60 * 1000,   // 5-minute TWAP
   vol_window: 30,                   // ticks used for EWMA vol estimate
-} as const;
+};
 
 // ── Anti-Manipulation v2 ─────────────────────────────────────────────────────
 export const ANTI_MANIP = {
@@ -96,7 +96,7 @@ export const ANTI_MANIP = {
 } as const;
 
 // ── Pricing Engine v3 — Hardened ─────────────────────────────────────────────
-export const PRICING_V3 = {
+export const PRICING_V3: Record<string, number> = {
   // ── Fair Value Oracle ──────────────────────────────────────────────────────
   pts_w: 0.35, ast_w: 0.20, reb_w: 0.20, eff_w: 0.25,
   max_pts: 2800, max_ast: 900, max_reb: 1200, max_eff: 3000,
@@ -179,7 +179,7 @@ export const PRICING_V3 = {
   // ── Position concentration limit ─────────────────────────────────────────
   // No account can hold shares worth more than this fraction of total market cap.
   max_position_pct: 0.10,           // 10% of outstanding market cap per user
-} as const;
+};
 
 // ── Anti-Manipulation v3 — Hardened ──────────────────────────────────────────
 export const ANTI_MANIP_V3 = {
@@ -217,7 +217,7 @@ export const ANTI_MANIP_V3 = {
 //   To profit from drift: need $0.04 × N ticks > fee.
 //   Over N ticks, cumulative noise = ±$0.20×√N >> drift gain.
 //   Drift is permanently below the fee + noise floor → non-exploitable.
-export const NO_GAME_PRICING = {
+export const NO_GAME_PRICING: Record<string, number> = {
   // ── O-U reversion ──────────────────────────────────────────────────────────
   alpha_base: 0.004,          // reversion speed/tick; half-life = ln(2)/0.004 ≈ 14 min
   alpha_max:  0.012,          // ceiling — prevents runaway convergence near settlement
@@ -242,7 +242,7 @@ export const NO_GAME_PRICING = {
   // Within 48h of settlement, ramp alpha up so price locks onto FV
   settlement_ramp_hours: 48,
   settlement_alpha_mult: 3.0, // alpha up to 3× base in final 48h
-} as const;
+};
 
 // Per-event price impact as a fraction of current_price.
 // Applied multiplicatively for each new stat event detected since last snapshot.

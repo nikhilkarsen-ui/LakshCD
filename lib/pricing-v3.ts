@@ -576,7 +576,7 @@ export function noGameTick(
   // ── Effective reversion speed (α) ────────────────────────────────────────
   // Scales up approaching tip-off (price should be near FV when trading starts)
   // and approaching settlement (final convergence).
-  let alpha = NG.alpha_base;
+  let alpha: number = NG.alpha_base;
 
   // Proximity ramp: within 8h of game, alpha increases linearly
   const hClamped = Math.max(0, Math.min(NG.proximity_window_hours, hoursUntilNextGame));
