@@ -380,9 +380,9 @@ export function computeBlendWeights(
   recentVolumeUSD: number,
   hts: number,
 ): PriceWeights {
-  let wAmm  = C.w_amm_base;
-  let wFv   = C.w_fv_base;
-  let wTwap = C.w_twap_base;
+  let wAmm:  number = C.w_amm_base;
+  let wFv:   number = C.w_fv_base;
+  let wTwap: number = C.w_twap_base;
 
   // 1. Volatility: high vol → anchor more to FV
   const volRatio = vol / C.target_vol;
@@ -417,15 +417,15 @@ export function computeBlendWeights(
   }
 
   // Normalise — ensure all weights are non-negative and sum to 1
-  wAmm  = Math.max(0, wAmm);
-  wFv   = Math.max(0, wFv);
-  wTwap = Math.max(0, wTwap);
-  const total = wAmm + wFv + wTwap;
+  const nAmm  = Math.max(0, Number(wAmm));
+  const nFv   = Math.max(0, Number(wFv));
+  const nTwap = Math.max(0, Number(wTwap));
+  const total = nAmm + nFv + nTwap;
 
   return {
-    wAmm:  parseFloat((wAmm  / total).toFixed(4)),
-    wFv:   parseFloat((wFv   / total).toFixed(4)),
-    wTwap: parseFloat((wTwap / total).toFixed(4)),
+    wAmm:  parseFloat((nAmm  / total).toFixed(4)),
+    wFv:   parseFloat((nFv   / total).toFixed(4)),
+    wTwap: parseFloat((nTwap / total).toFixed(4)),
   };
 }
 
