@@ -116,6 +116,19 @@ export async function POST(req: NextRequest) {
     for (const row of volumes || [])
       volume24hMap[row.player_id] = (volume24hMap[row.player_id] ?? 0) + Number(row.total_value);
 
+    // ── 30-min trade volume (for TWAP anomaly dampening) ─────────────────
+    const ago30m = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const { data: volumes30m } = await db
+      .from('trades')
+      .select('player_id, total_value')
+      .in('player_id', players.map((p: any) => p.id))
+      .gte('created_at', ago30m)
+      .in('side', ['buy', 'sell']);
+
+    const volume30mMap: Record<string, number> = {};
+    for (const row of volumes30m || [])
+      volume30mMap[row.player_id] = (volume30mMap[row.player_id] ?? 0) + Number(row.total_value);
+
     const now = new Date().toISOString();
     const inserts: any[] = [];
 
@@ -154,9 +167,11 @@ export async function POST(req: NextRequest) {
       const lastTradeAt      = p.last_trade_at ? new Date(p.last_trade_at).getTime() : 0;
       const timeSinceTradeMs = lastTradeAt > 0 ? Date.now() - lastTradeAt : 60 * 60 * 1000;
 
+      const vol30m = volume30mMap[p.id] ?? 0;
+
       // Route to O-U no-game model when market is quiet
       const t = hasLiveGames
-        ? tick(p as Player, histories[p.id] ?? [], vol24h, timeSinceTradeMs)
+        ? tick(p as Player, histories[p.id] ?? [], vol24h, timeSinceTradeMs, vol30m)
         : noGameTick(p as Player, histories[p.id] ?? [], hoursUntilNextGame, vol24h);
 
       const prev         = p.current_price;

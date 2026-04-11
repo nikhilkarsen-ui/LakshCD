@@ -454,10 +454,31 @@ export interface PriceWeights {
  *     5 minutes of no trading activity.
  *   - Settlement convergence is stronger (2-week ramp, 50% FV boost).
  */
+/**
+ * Detect if recent 30-minute volume is anomalously high vs 7-day baseline.
+ * Returns a multiplier 0–1. At 1× baseline: no dampening. At 5×: TWAP zeroed.
+ * This prevents the TWAP echo attack: a pump sustains elevated TWAP for 30min.
+ * When volume is anomalous, TWAP weight transfers to FV (the oracle anchor).
+ */
+export function computeTwapAnomalyDampening(
+  volume30mUSD:   number,
+  avgDailyVolume: number,
+): number {
+  if (avgDailyVolume <= 0) return 1.0;
+  // Normalize: 30-min fair share = 30/1440 = 2.08% of daily
+  const expectedVol30m = avgDailyVolume * (30 / 1440);
+  const ratio = volume30mUSD / Math.max(expectedVol30m, 1);
+  // ratio > 3× normal → start dampening; ratio ≥ 10× → full zero
+  const dampening = Math.max(0, 1 - (ratio - 3) / 7);
+  return Math.min(1, dampening);
+}
+
 export function computeBlendWeights(
   vol:                  number,
   timeSinceLastTradeMs: number,
   hts:                  number,
+  volume30mUSD:         number = 0,
+  avgDailyVolume:       number = 50_000,
 ): PriceWeights {
   let wAmm:  number = C.w_amm_base;
   let wFv:   number = C.w_fv_base;
@@ -478,9 +499,15 @@ export function computeBlendWeights(
   wFv   += idleShift * 0.70;
   wTwap += idleShift * 0.30;
 
-  // 3. Volume no longer increases AMM weight (v2 attack vector removed).
-  //    High organic volume is good — it deepens the pool — but it doesn't
-  //    mean the AMM spot should be more trusted.
+  // 3. TWAP anomaly dampening: if 30-min volume is ≥3× expected, reduce TWAP
+  //    weight toward zero and shift to FV. This breaks the TWAP echo attack
+  //    where a pump sustains elevated blended prices for 30 minutes for free.
+  const twapDamp = computeTwapAnomalyDampening(volume30mUSD, avgDailyVolume);
+  if (twapDamp < 1.0) {
+    const twapShift = wTwap * (1 - twapDamp);
+    wTwap -= twapShift;
+    wFv   += twapShift;
+  }
 
   // 4. Settlement convergence: FV becomes near-total authority
   if (hts < C.settlement_anchor_hours) {
@@ -657,6 +684,7 @@ export function tick(
   history:              PricePoint[],
   recentVolume24hUSD:   number,
   timeSinceLastTradeMs: number,
+  recentVolume30mUSD:   number = 0,
 ): TickResult {
   const fv       = computeFairValue(player);
   const evScore  = computeEVScore(player);
@@ -671,7 +699,7 @@ export function tick(
   const ammSpot = (py > 0 && px > 0) ? py / px : cur;
 
   const depth   = computeMarketDepth(player, fv, recentVolume24hUSD);
-  const weights = computeBlendWeights(vol, timeSinceLastTradeMs, hts);
+  const weights = computeBlendWeights(vol, timeSinceLastTradeMs, hts, recentVolume30mUSD, recentVolume24hUSD);
 
   // ── Momentum breaker flag (stored — trading.ts enforces it on buys) ───────
   const { triggered: momentumBreaker } = checkMomentumBreaker(history, cur);

@@ -234,6 +234,42 @@ export interface TradeGateResult {
 }
 
 /**
+ * Compute combined fill penalty including sybil (IP-shared) pressure.
+ * Calls the Postgres function get_ip_shared_pressure() which sums
+ * decayed pressure from all accounts sharing the same signup_ip.
+ */
+async function computeSybilAdjustedPenalty(
+  db:       ReturnType<typeof import('./supabase').serverSupa>,
+  userId:   string,
+  playerId: string,
+  side:     'buy' | 'sell',
+  ownPressure: number,
+): Promise<number> {
+  try {
+    const { data: ipPressure } = await db.rpc('get_ip_shared_pressure', {
+      p_user_id:   userId,
+      p_player_id: playerId,
+    });
+
+    const combined    = ownPressure + (Number(ipPressure) || 0);
+    const isBuying    = side === 'buy';
+    const sameDir     = (isBuying && combined > 0) || (!isBuying && combined < 0);
+    if (!sameDir) return 1.0;
+
+    const ratio   = Math.min(Math.abs(combined) / C.max_pressure_score, 1);
+    const penalty = ratio * ratio * C.max_fill_penalty;
+    return 1 + penalty;
+  } catch {
+    // If RPC unavailable (migration not run yet), fall back to own pressure only
+    const isBuying = side === 'buy';
+    const sameDir  = (isBuying && ownPressure > 0) || (!isBuying && ownPressure < 0);
+    if (!sameDir) return 1.0;
+    const ratio   = Math.min(Math.abs(ownPressure) / C.max_pressure_score, 1);
+    return 1 + ratio * ratio * C.max_fill_penalty;
+  }
+}
+
+/**
  * Master gate: runs all checks in order of increasing DB cost.
  * First failure blocks the trade.
  *
@@ -252,6 +288,7 @@ export async function checkTradeGate(
   sharesToBuy:     number,
   currentPrice:    number,
   momentumTriggered: boolean,
+  ip:              string | null = null,
 ): Promise<TradeGateResult> {
 
   // 1. Momentum circuit breaker — blocks buying only
@@ -281,8 +318,9 @@ export async function checkTradeGate(
     };
   }
 
-  // 4. Directional pressure penalty (computed regardless, applied to fill)
-  const fillPenalty = await computeFillPenalty(db, userId, playerId, side);
+  // 4. Directional pressure penalty — includes sybil (IP-shared) pressure
+  const ownPressure = await computeDecayedPressure(db, userId, playerId);
+  const fillPenalty = await computeSybilAdjustedPenalty(db, userId, playerId, side, ownPressure);
 
   // 5. Position concentration (buys only)
   if (side === 'buy' && sharesToBuy > 0) {

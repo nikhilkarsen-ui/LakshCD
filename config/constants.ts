@@ -166,7 +166,7 @@ export const PRICING_V3: Record<string, number> = {
 
   // ── TWAP ──────────────────────────────────────────────────────────────────
   twap_window_ms: 30 * 60 * 1000,    // was 5 min — now 30 min
-  settlement_twap_window_ms: 24 * 60 * 60 * 1000,  // 24h TWAP used for settlement
+  settlement_twap_window_ms: 7 * 24 * 60 * 60 * 1000, // 7-day TWAP — nearly impossible to sustain manipulation
   vol_window: 30,
 
   // ── Momentum circuit breaker ─────────────────────────────────────────────

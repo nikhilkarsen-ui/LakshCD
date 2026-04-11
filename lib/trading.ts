@@ -44,7 +44,7 @@ function snap(qty: number): number {
 }
 
 // ─── Buy ──────────────────────────────────────────────────────────────────────
-async function executeBuy(userId: string, req: TradeRequest) {
+async function executeBuy(userId: string, req: TradeRequest, ip: string | null = null) {
   const db = serverSupa();
 
   // 1. User record
@@ -102,7 +102,7 @@ async function executeBuy(userId: string, req: TradeRequest) {
 
   const gate = await checkTradeGate(
     db, userId, req.player_id, 'buy',
-    sharesEstimate, Number(player.current_price), momentumActive,
+    sharesEstimate, Number(player.current_price), momentumActive, ip,
   );
   if (!gate.allowed) return { success: false, error: gate.reason };
 
@@ -143,14 +143,20 @@ async function executeBuy(userId: string, req: TradeRequest) {
     { onConflict: 'user_id,player_id' },
   );
 
-  // 12. Trade record
+  // 12. Trade record (include IP for sybil audit trail)
   const { data: trade } = await db.from('trades').insert({
     user_id: userId, player_id: req.player_id, side: 'buy',
     shares: sharesActual,
     price: parseFloat(effPrice.toFixed(4)),
     total_value: parseFloat(dollars.toFixed(2)),
     realized_pnl: 0,
+    ...(ip ? { trade_ip: ip } : {}),
   }).select().single();
+
+  // Update last_trade_ip on user for sybil tracking
+  if (ip) {
+    await db.from('users').update({ last_trade_ip: ip }).eq('id', userId);
+  }
 
   // 13. Sync AMM pools + derived fields — CAS on pool_x to prevent race condition
   // If another trade executed between our read and write, pool_x will have changed.
@@ -191,7 +197,7 @@ async function executeBuy(userId: string, req: TradeRequest) {
 }
 
 // ─── Sell ─────────────────────────────────────────────────────────────────────
-async function executeSell(userId: string, req: TradeRequest) {
+async function executeSell(userId: string, req: TradeRequest, ip: string | null = null) {
   const db = serverSupa();
 
   // 1. User
@@ -320,33 +326,55 @@ async function executeSell(userId: string, req: TradeRequest) {
     price: parseFloat(effPrice.toFixed(4)),
     total_value: parseFloat(Math.abs(usdOut ?? proceeds).toFixed(2)),
     realized_pnl: realizedPnl,
+    ...(ip ? { trade_ip: ip } : {}),
   }).select().single();
 
-  // 10. Pool sync
+  if (ip) {
+    await db.from('users').update({ last_trade_ip: ip }).eq('id', userId);
+  }
+
+  // 10. Pool sync — CAS on pool_x to prevent race condition
   const newSpot = ammNewX > 0
     ? parseFloat((ammNewY / ammNewX).toFixed(2))
     : Number(player.current_price);
 
-  await db.from('players').update({
+  const { data: sellPoolUpdated } = await db.from('players').update({
     pool_x:        parseFloat(ammNewX.toFixed(6)),
     pool_y:        parseFloat(ammNewY.toFixed(4)),
     current_price: newSpot,
     last_trade_at: new Date().toISOString(),
     last_fee_rate: feeRate,
     updated_at:    new Date().toISOString(),
-  }).eq('id', req.player_id);
+  }).eq('id', req.player_id)
+    .eq('pool_x', parseFloat(poolX.toFixed(6)))
+    .select('id').single();
+
+  if (!sellPoolUpdated) {
+    await db.from('users').update({ balance: bal, updated_at: new Date().toISOString() }).eq('id', userId);
+    await db.from('trades').delete().eq('id', (trade as any)?.id);
+    if (newShares > 0) {
+      await db.from('positions').update({ shares_owned: sharesOwned, updated_at: new Date().toISOString() })
+        .eq('user_id', userId).eq('player_id', req.player_id);
+    } else {
+      await db.from('positions').upsert(
+        { user_id: userId, player_id: req.player_id, shares_owned: sharesOwned, avg_cost_basis: avgCost, realized_pnl: oldRealized, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id,player_id' },
+      );
+    }
+    return { success: false, error: 'Price moved during trade — please retry' };
+  }
 
   console.log(`SELL${req.sell_all ? ' ALL' : ''} user=${userId} shares=${actualSold.toFixed(6)} effPrice=${effPrice.toFixed(2)} pnl=${realizedPnl.toFixed(2)} newBal=${newBal}`);
   return { success: true, trade, new_balance: newBal, realized_pnl: realizedPnl };
 }
 
 // ─── Public executor ─────────────────────────────────────────────────────────
-export async function executeTrade(userId: string, req: TradeRequest) {
+export async function executeTrade(userId: string, req: TradeRequest, ip: string | null = null) {
   if (Date.now() >= new Date(SEASON.settlement_date).getTime())
     return { success: false, error: 'Season has settled — trading is closed.' };
   try {
-    if (req.side === 'buy')  return await executeBuy(userId, req);
-    if (req.side === 'sell') return await executeSell(userId, req);
+    if (req.side === 'buy')  return await executeBuy(userId, req, ip);
+    if (req.side === 'sell') return await executeSell(userId, req, ip);
     return { success: false, error: 'Invalid side — must be buy or sell' };
   } catch (e: any) {
     console.error('TRADE ERR:', e);
@@ -355,10 +383,17 @@ export async function executeTrade(userId: string, req: TradeRequest) {
 }
 
 // ─── Season Settlement (v3) ───────────────────────────────────────────────────
-// Settlement = 80% FinalFairValue + 20% 24h-TWAP.
-// A manipulator who controls price all day still only moves settlement 3%.
+// Settlement = 80% FinalFairValue + 20% TWAP_7day.
+// Distributed lock ensures this runs exactly once even under concurrent load.
 export async function runSettlement() {
   const db = serverSupa();
+
+  // Atomic claim — only one concurrent caller can proceed
+  const { data: claimed, error: lockErr } = await db.rpc('claim_settlement');
+  if (lockErr || !claimed) {
+    console.log('Settlement already claimed by another process — skipping');
+    return { settled_players: 0, settled_users: 0 };
+  }
 
   const { data: players } = await db.from('players').select('*').eq('settlement_status', 'active');
   if (!players?.length) return { settled_players: 0, settled_users: 0 };
@@ -366,12 +401,12 @@ export async function runSettlement() {
   let settledPlayers = 0, settledUsers = 0;
 
   for (const player of players) {
-    // Load full 24h price history for TWAP
+    // Load 7-day price history for TWAP settlement (7-day window is nearly manipulation-proof)
     const { data: history } = await db
       .from('price_history')
       .select('*')
       .eq('player_id', player.id)
-      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
       .order('created_at', { ascending: true });
 
     const hist = (history ?? []).map((h: any) => ({ ...h, price: Number(h.price) }));
