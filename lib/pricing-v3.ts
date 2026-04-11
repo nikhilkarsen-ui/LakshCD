@@ -316,9 +316,19 @@ export function computeAMMTrade(
     return { effectivePrice: fairValue, slippage: 0, priceImpact: 0, newPoolX: px, newPoolY: py, qty, blocked: false, feeRate };
   }
 
-  // Quadratic slippage
-  const rawImpact    = Math.pow(tradeUSD / (marketDepth + tradeUSD), C.slippage_exponent);
-  const cappedImpact = Math.min(rawImpact, maxImpact);
+  // Quadratic slippage — block if impact exceeds cap (don't silently cap it)
+  const rawImpact = Math.pow(tradeUSD / (marketDepth + tradeUSD), C.slippage_exponent);
+  if (rawImpact > maxImpact) {
+    const maxUSD = marketDepth * (Math.pow(maxImpact, 1 / C.slippage_exponent) /
+                   (1 - Math.pow(maxImpact, 1 / C.slippage_exponent)));
+    return {
+      effectivePrice: spot, slippage: 0, priceImpact: 0,
+      newPoolX: px, newPoolY: py, qty: 0,
+      blocked: true, feeRate,
+      blockReason: `Trade too large: ${(rawImpact*100).toFixed(1)}% price impact (max ${(maxImpact*100).toFixed(0)}%). Try $${Math.floor(maxUSD).toLocaleString()} or less.`,
+    };
+  }
+  const cappedImpact = rawImpact;
 
   const direction = side === 'buy' ? 1 : -1;
   const newSpot   = spot * (1 + direction * cappedImpact);

@@ -138,8 +138,8 @@ export const PRICING_V3: Record<string, number> = {
 
   // ── Price Blend Weights ───────────────────────────────────────────────────
   // AMM drives visible per-tick movement. FV anchors the fair price.
-  w_amm_base:  0.35,   // higher AMM weight = visible price movement each tick
-  w_fv_base:   0.45,   // FV still dominates overall direction
+  w_amm_base:  0.20,   // reduced from 0.35 — less per-trade price impact on blended price
+  w_fv_base:   0.60,   // increased from 0.45 — more oracle-dominant
   w_twap_base: 0.20,
 
   // ── Tick / Mean Reversion ─────────────────────────────────────────────────
@@ -147,10 +147,10 @@ export const PRICING_V3: Record<string, number> = {
   drift_season_boost: 0.50,
   deviation_boost_threshold: 0.08,
   deviation_boost_multiplier: 0.50,
-  noise_scale: 1.2,                 // vol-scaled noise — pairs with noise_min_vol floor
-  noise_min_vol: 0.05,              // minimum vol used for noise (prevents near-zero movement)
+  noise_scale: 0.35,                // reduced from 1.2 — noise no longer always hits cap
+  noise_min_vol: 0.02,              // reduced from 0.05 — ~$2/tick on $300 player at 1σ
   noise_damp_decay: 0.15,
-  max_tick: 0.08,                   // AMM spot can move up to 8% per tick
+  max_tick: 0.03,                   // reduced from 0.08 — max 3% per tick = $9 on $300
 
   // ── Dynamic Weight Adjustments ───────────────────────────────────────────
   target_vol: 0.015,

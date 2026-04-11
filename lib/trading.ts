@@ -152,19 +152,33 @@ async function executeBuy(userId: string, req: TradeRequest) {
     realized_pnl: 0,
   }).select().single();
 
-  // 13. Sync AMM pools + derived fields
+  // 13. Sync AMM pools + derived fields — CAS on pool_x to prevent race condition
+  // If another trade executed between our read and write, pool_x will have changed.
+  // The update matches no rows → trade conflict, user retries with fresh price.
   const newSpot = ammPre.newPoolX > 0
     ? parseFloat((ammPre.newPoolY / ammPre.newPoolX).toFixed(2))
     : Number(player.current_price);
 
-  await db.from('players').update({
+  const { data: poolUpdated } = await db.from('players').update({
     pool_x:        parseFloat(ammPre.newPoolX.toFixed(6)),
     pool_y:        parseFloat(ammPre.newPoolY.toFixed(4)),
     current_price: newSpot,
     last_trade_at: new Date().toISOString(),
     last_fee_rate: feeRate,
     updated_at:    new Date().toISOString(),
-  }).eq('id', req.player_id);
+  }).eq('id', req.player_id)
+    .eq('pool_x', parseFloat(poolX.toFixed(6)))  // CAS: reject if pool changed
+    .select('id').single();
+
+  if (!poolUpdated) {
+    // Roll back the balance deduction — re-credit the user
+    await db.from('users').update({ balance: bal, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+    await db.from('trades').delete().eq('id', (trade as any)?.id);
+    await db.from('positions').update({ shares_owned: oldShares, avg_cost_basis: oldAvg, updated_at: new Date().toISOString() })
+      .eq('user_id', userId).eq('player_id', req.player_id);
+    return { success: false, error: 'Price moved during trade — please retry' };
+  }
 
   console.log(`BUY user=${userId} shares=${sharesActual.toFixed(6)} effPrice=${effPrice.toFixed(2)} fee=${(feeRate*100).toFixed(2)}% penalty=${((penaltyMult-1)*100).toFixed(1)}% newBal=${newBal}`);
   return {
@@ -230,34 +244,19 @@ async function executeSell(userId: string, req: TradeRequest) {
   let ammNewX: number, ammNewY: number, feeRate: number;
 
   if (req.sell_all) {
-    // Sell exact shares_owned — skip dollar→shares rounding
-    actualSold = sharesOwned;
-    const k    = poolX * poolY;
-    feeRate    = Number(player.last_fee_rate ?? 0.002);
+    // Route through computeAMMTrade for consistent slippage + circuit breaker
+    const notional = sharesOwned * spot;
+    const amm = computeAMMTrade(poolX, poolY, notional, 'sell', fv, depth, hts, vol);
+    if (amm.blocked) return { success: false, error: amm.blockReason };
 
-    if (k <= 0) {
-      effPrice  = spot;
-      usdOut    = actualSold * spot;
-      ammNewX   = poolX + actualSold;
-      ammNewY   = poolY;
-    } else {
-      const nX = poolX + actualSold;
-      const nY = k / nX;
-      usdOut   = poolY - nY;
-      effPrice = actualSold > 0 ? usdOut / actualSold : spot;
-      ammNewX  = nX;
-      ammNewY  = nY;
-    }
+    feeRate    = amm.feeRate;
+    actualSold = Math.min(snap(amm.qty), sharesOwned);
+    if (actualSold <= 0) return { success: false, error: 'Trade amount too small' };
 
-    // Oracle deviation guard for sell_all
-    const postSpot = ammNewX > 0 ? ammNewY / ammNewX : spot;
-    const { computeCircuitBreaker } = await import('./pricing-v3');
-    const maxDev = computeCircuitBreaker(hts);
-    if (Math.abs(postSpot - fv) / Math.max(fv, 1) > maxDev)
-      return { success: false, error: `Trade blocked: would push price beyond the circuit breaker (±${(maxDev*100).toFixed(0)}% of fair value)` };
-
-    // Fill penalty for sells: fewer USD received
-    effPrice = effPrice * (2 - gate.fillPenalty);
+    effPrice  = amm.effectivePrice * (2 - gate.fillPenalty);
+    usdOut    = effPrice * actualSold;
+    ammNewX   = amm.newPoolX;
+    ammNewY   = amm.newPoolY;
     const fee = usdOut * feeRate;
     proceeds  = parseFloat(Math.max(0, usdOut - fee).toFixed(2));
 
