@@ -27,8 +27,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(s); setUser(s?.user ?? null); setLoading(false);
       if (ev === 'SIGNED_IN' && s?.user && !created.current) {
         created.current = true;
-        await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: s.user.id, email: s.user.email, display_name: s.user.user_metadata?.display_name || s.user.email?.split('@')[0] }) }).catch(() => {});
+        await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}` },
+          body: JSON.stringify({ user_id: s.user.id, email: s.user.email, display_name: s.user.user_metadata?.display_name || s.user.email?.split('@')[0] }),
+        }).catch(() => {});
       }
     });
     return () => subscription.unsubscribe();

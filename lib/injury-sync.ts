@@ -44,7 +44,8 @@ function normaliseStatus(raw: string | null | undefined): InjuryStatus {
   if (s.includes('questionable'))                    return 'Questionable';
   if (s.includes('day-to-day') || s.includes('dtd')) return 'Day-To-Day';
   if (s.includes('probable'))                        return 'Probable';
-  return 'Day-To-Day'; // unknown status → treat as minor
+  console.warn(`[injury-sync] Unknown BDL status: "${raw}" — treating as healthy`);
+  return null; // unknown status → no discount (safer than assuming minor)
 }
 
 export interface InjurySyncResult {

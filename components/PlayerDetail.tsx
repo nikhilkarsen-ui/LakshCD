@@ -447,8 +447,8 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
                 <span>{(enteredDollars / player.current_price).toFixed(4)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-lk-dim">Fee (0.1%)</span>
-                <span>${(enteredDollars * 0.001).toFixed(2)}</span>
+                <span className="text-lk-dim">Fee (est. 0.2–0.5%)</span>
+                <span>~${(enteredDollars * 0.003).toFixed(2)}</span>
               </div>
               {sellExceedsOwned && (
                 <div className="text-lk-red font-medium pt-1">

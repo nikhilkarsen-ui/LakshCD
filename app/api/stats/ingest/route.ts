@@ -14,7 +14,7 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getUser } from '@/lib/auth';
+import { getUser, getAppUser } from '@/lib/auth';
 import { runPoll } from '@/lib/bdl-poller';
 import { syncLiveBoosts } from '@/lib/live-stats';
 import { syncInjuries } from '@/lib/injury-sync';
@@ -72,22 +72,20 @@ async function handle() {
   }
 }
 
+async function checkAuth(req: NextRequest): Promise<boolean> {
+  const cronSecret   = req.headers.get('x-cron-secret');
+  const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+  if (isVercelCron || (!!process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET)) return true;
+  const appUser = await getAppUser(req);
+  return !!appUser?.is_approved;
+}
+
 export async function GET(req: NextRequest) {
-  const cronSecret  = req.headers.get('x-cron-secret');
-  const validCron   = !!process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET;
-  if (!validCron) {
-    const user = await getUser(req);
-    if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  if (!await checkAuth(req)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   return handle();
 }
 
 export async function POST(req: NextRequest) {
-  const cronSecret  = req.headers.get('x-cron-secret');
-  const validCron   = !!process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET;
-  if (!validCron) {
-    const user = await getUser(req);
-    if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  if (!await checkAuth(req)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   return handle();
 }

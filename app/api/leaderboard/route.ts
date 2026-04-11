@@ -8,7 +8,7 @@ export async function GET() {
   const { data: allPos } = await db
     .from('positions')
     .select('user_id, shares_owned, avg_cost_basis, player:players(current_price)');
-  const { data: allTrades } = await db.from('trades').select('user_id');
+  const { data: allTrades } = await db.from('trades').select('user_id').in('side', ['buy', 'sell']);
 
   // Holdings value per user (shares_owned * current_price)
   const holdingsMap: Record<string, number> = {};

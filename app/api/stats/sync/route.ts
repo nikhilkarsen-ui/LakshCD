@@ -41,8 +41,15 @@ async function handle() {
   }
 }
 
-// Vercel cron jobs send GET — no auth needed (endpoint only writes player stats, not financial data)
-export async function GET(_req: NextRequest) {
+// Vercel cron jobs send GET with x-vercel-cron:1 header — verify it or fall back to user auth
+export async function GET(req: NextRequest) {
+  const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+  const cronSecret   = req.headers.get('x-cron-secret');
+  const validCron    = isVercelCron || (!!process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET);
+  if (!validCron) {
+    const user = await getUser(req);
+    if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   return handle();
 }
 

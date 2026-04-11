@@ -18,7 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { serverSupa } from '@/lib/supabase';
 import { tick, noGameTick } from '@/lib/pricing-v3';
 import { runSettlement } from '@/lib/trading';
-import { getUser } from '@/lib/auth';
+import { getUser, getAppUser } from '@/lib/auth';
 import { Player, PricePoint } from '@/types';
 import { SEASON, PRICING_V3 as C } from '@/config/constants';
 export const dynamic = 'force-dynamic';
@@ -32,11 +32,13 @@ const NF = [
 ];
 
 export async function POST(req: NextRequest) {
-  const cronSecret = req.headers.get('x-cron-secret');
-  const validCron  = !!process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET;
+  const cronSecret   = req.headers.get('x-cron-secret');
+  const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+  const validCron    = isVercelCron || (!!process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET);
   if (!validCron) {
-    const user = await getUser(req);
-    if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    // Non-cron callers must be approved users (not just any valid JWT)
+    const appUser = await getAppUser(req);
+    if (!appUser?.is_approved) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   try {

@@ -4,7 +4,29 @@ import { sendWaitlistConfirmation, sendAdminWaitlistNotification } from '@/lib/e
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// In-memory rate limit: max 3 waitlist joins per IP per 10 minutes
+const ipJoinMap = new Map<string, { count: number; windowStart: number }>();
+const JOIN_LIMIT = 3;
+const JOIN_WINDOW_MS = 10 * 60 * 1000;
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = ipJoinMap.get(ip);
+  if (!entry || now - entry.windowStart > JOIN_WINDOW_MS) {
+    ipJoinMap.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+  if (entry.count >= JOIN_LIMIT) return true;
+  entry.count++;
+  return false;
+}
+
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip') ?? 'unknown';
+  if (isRateLimited(ip)) {
+    return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
+  }
+
   const body = await req.json();
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
 

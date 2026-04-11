@@ -50,12 +50,17 @@ async function executeBuy(userId: string, req: TradeRequest, ip: string | null =
   // 1. User record
   let { data: user } = await db.from('users').select('*').eq('id', userId).single();
   if (!user) {
-    const { data: nu } = await db
-      .from('users')
-      .insert({ id: userId, email: 'user@laksh.exchange', display_name: 'Trader', balance: TRADE.initial_balance, initial_balance: TRADE.initial_balance })
-      .select().single();
-    if (!nu) return { success: false, error: 'User not found' };
-    user = nu;
+    // User may not exist yet if the /api/auth upsert failed at signup.
+    // ignoreDuplicates=true: if two concurrent first-trades race here, the
+    // second upsert is a no-op and the SELECT below finds the first's row.
+    await db.from('users').upsert(
+      { id: userId, email: 'unknown@laksh.exchange', display_name: 'Trader',
+        balance: TRADE.initial_balance, initial_balance: TRADE.initial_balance },
+      { onConflict: 'id', ignoreDuplicates: true },
+    );
+    const { data: refetched } = await db.from('users').select('*').eq('id', userId).single();
+    if (!refetched) return { success: false, error: 'User account not found. Please sign out and back in.' };
+    user = refetched;
   }
   const bal = Number(user.balance);
 
@@ -259,7 +264,8 @@ async function executeSell(userId: string, req: TradeRequest, ip: string | null 
     actualSold = sharesOwned; // sell exactly what's owned — amm.qty can differ by rounding
     if (actualSold <= 0) return { success: false, error: 'No shares to sell' };
 
-    effPrice  = amm.effectivePrice * (2 - gate.fillPenalty);
+    // Penalty divides the price received (symmetric: buy penalty multiplies cost)
+    effPrice  = amm.effectivePrice / gate.fillPenalty;
     usdOut    = effPrice * actualSold;
     ammNewX   = amm.newPoolX;
     ammNewY   = amm.newPoolY;
@@ -285,10 +291,11 @@ async function executeSell(userId: string, req: TradeRequest, ip: string | null 
     }
 
     actualSold = Math.min(sharesToSell, sharesOwned);
-    // Fill penalty for sells: reduce effective price received
-    effPrice   = amm.effectivePrice * (2 - gate.fillPenalty);
+    // Penalty divides the price received (symmetric: buy penalty multiplies cost)
+    effPrice   = amm.effectivePrice / gate.fillPenalty;
     usdOut     = effPrice * actualSold;
-    const fee  = dollars * feeRate;
+    // Fee on actual proceeds, not on requested notional
+    const fee  = usdOut * feeRate;
     proceeds   = parseFloat(Math.max(0, usdOut - fee).toFixed(2));
     ammNewX    = amm.newPoolX;
     ammNewY    = amm.newPoolY;
@@ -324,7 +331,7 @@ async function executeSell(userId: string, req: TradeRequest, ip: string | null 
     user_id: userId, player_id: req.player_id, side: 'sell',
     shares: actualSold,
     price: parseFloat(effPrice.toFixed(4)),
-    total_value: parseFloat(Math.abs(usdOut ?? proceeds).toFixed(2)),
+    total_value: parseFloat(usdOut.toFixed(2)),
     realized_pnl: realizedPnl,
     ...(ip ? { trade_ip: ip } : {}),
   }).select().single();
@@ -350,16 +357,29 @@ async function executeSell(userId: string, req: TradeRequest, ip: string | null 
     .select('id').single();
 
   if (!sellPoolUpdated) {
-    await db.from('users').update({ balance: bal, updated_at: new Date().toISOString() }).eq('id', userId);
-    await db.from('trades').delete().eq('id', (trade as any)?.id);
+    // Roll back in order: balance → position → trade record
+    const { error: balErr } = await db.from('users')
+      .update({ balance: bal, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+    if (balErr) console.error(`SELL ROLLBACK: balance restore failed user=${userId}`, balErr);
+
     if (newShares > 0) {
-      await db.from('positions').update({ shares_owned: sharesOwned, updated_at: new Date().toISOString() })
+      const { error: posErr } = await db.from('positions')
+        .update({ shares_owned: sharesOwned, updated_at: new Date().toISOString() })
         .eq('user_id', userId).eq('player_id', req.player_id);
+      if (posErr) console.error(`SELL ROLLBACK: position restore failed user=${userId} player=${req.player_id}`, posErr);
     } else {
-      await db.from('positions').upsert(
-        { user_id: userId, player_id: req.player_id, shares_owned: sharesOwned, avg_cost_basis: avgCost, realized_pnl: oldRealized, updated_at: new Date().toISOString() },
+      // Position was deleted — recreate it
+      const { error: upsertErr } = await db.from('positions').upsert(
+        { user_id: userId, player_id: req.player_id, shares_owned: sharesOwned,
+          avg_cost_basis: avgCost, realized_pnl: oldRealized, updated_at: new Date().toISOString() },
         { onConflict: 'user_id,player_id' },
       );
+      if (upsertErr) console.error(`SELL ROLLBACK: position recreate failed user=${userId} player=${req.player_id} — SHARES LOST`, upsertErr);
+    }
+
+    if ((trade as any)?.id) {
+      await db.from('trades').delete().eq('id', (trade as any).id);
     }
     return { success: false, error: 'Price moved during trade — please retry' };
   }
@@ -378,7 +398,7 @@ export async function executeTrade(userId: string, req: TradeRequest, ip: string
     return { success: false, error: 'Invalid side — must be buy or sell' };
   } catch (e: any) {
     console.error('TRADE ERR:', e);
-    return { success: false, error: e.message };
+    return { success: false, error: 'An internal error occurred. Please try again.' };
   }
 }
 
@@ -388,19 +408,32 @@ export async function executeTrade(userId: string, req: TradeRequest, ip: string
 export async function runSettlement() {
   const db = serverSupa();
 
-  // Atomic claim — only one concurrent caller can proceed
+  // Atomic claim — only one concurrent caller can proceed.
+  // Re-entrant: if a previous run crashed mid-way, unsettled players still have
+  // settlement_status='active'. We check for those before deciding to skip.
   const { data: claimed, error: lockErr } = await db.rpc('claim_settlement');
   if (lockErr || !claimed) {
-    console.log('Settlement already claimed by another process — skipping');
-    return { settled_players: 0, settled_users: 0 };
+    // Lock already held — but check if there are still unsettled players
+    // (previous run may have crashed). If so, proceed anyway.
+    const { count: remaining } = await db
+      .from('players')
+      .select('*', { count: 'exact', head: true })
+      .eq('settlement_status', 'active');
+    if (!remaining) {
+      console.log('Settlement already complete — skipping');
+      return { settled_players: 0, settled_users: 0 };
+    }
+    console.log(`Settlement lock held but ${remaining} players unsettled — resuming`);
   }
 
   const { data: players } = await db.from('players').select('*').eq('settlement_status', 'active');
   if (!players?.length) return { settled_players: 0, settled_users: 0 };
 
   let settledPlayers = 0, settledUsers = 0;
+  const failedPlayers: string[] = [];
 
   for (const player of players) {
+    try {
     // Load 7-day price history for TWAP settlement (7-day window is nearly manipulation-proof)
     const { data: history } = await db
       .from('price_history')
@@ -430,15 +463,25 @@ export async function runSettlement() {
       const proceeds    = shares * settlementPrice;
       const realizedPnl = (settlementPrice - Number(pos.avg_cost_basis)) * shares;
 
-      const { data: u } = await db.from('users').select('balance').eq('id', pos.user_id).single();
-      if (!u) continue;
-
-      const newBal = parseFloat((Number(u.balance) + proceeds).toFixed(2));
-      const { data: updatedUser } = await db.from('users')
-        .update({ balance: newBal, updated_at: new Date().toISOString() })
-        .eq('id', pos.user_id).eq('balance', parseFloat(Number(u.balance).toFixed(2)))
-        .select('balance').single();
-      if (!updatedUser) continue;
+      // CAS with retry: concurrent settlement workers (crash recovery) can collide on the same user.
+      // Retry up to 5 times to handle the case where another worker updated the balance first.
+      let credited = false;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data: u } = await db.from('users').select('balance').eq('id', pos.user_id).single();
+        if (!u) break;
+        const newBal = parseFloat((Number(u.balance) + proceeds).toFixed(2));
+        const { data: updatedUser } = await db.from('users')
+          .update({ balance: newBal, updated_at: new Date().toISOString() })
+          .eq('id', pos.user_id).eq('balance', parseFloat(Number(u.balance).toFixed(2)))
+          .select('balance').single();
+        if (updatedUser) { credited = true; break; }
+        // CAS miss — another concurrent update changed balance; re-read and retry
+        await new Promise(r => setTimeout(r, 20 * (attempt + 1)));
+      }
+      if (!credited) {
+        console.error(`Settlement balance CAS failed after retries for user=${pos.user_id} player=${player.id} — skipping position`);
+        continue;
+      }
 
       await db.from('trades').insert({
         user_id:      pos.user_id,
@@ -455,8 +498,16 @@ export async function runSettlement() {
     }
 
     settledPlayers++;
+    } catch (e: any) {
+      console.error(`Settlement failed for player=${player.id} (${player.name}):`, e.message);
+      failedPlayers.push(player.name);
+      // Continue to next player — don't let one failure abort the whole settlement
+    }
   }
 
+  if (failedPlayers.length) {
+    console.error(`SETTLEMENT INCOMPLETE: ${failedPlayers.length} players failed: ${failedPlayers.join(', ')}`);
+  }
   console.log(`SETTLEMENT v3 COMPLETE: ${settledPlayers} players, ${settledUsers} positions @ 80% FV + 20% TWAP`);
-  return { settled_players: settledPlayers, settled_users: settledUsers };
+  return { settled_players: settledPlayers, settled_users: settledUsers, failed_players: failedPlayers };
 }
