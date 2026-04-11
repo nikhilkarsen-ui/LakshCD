@@ -111,4 +111,4 @@ export interface TradeRequest {
   sell_all?: boolean; // if true, sell exact shares_owned regardless of dollars
 }
 
-export type ChartRange = '1D' | '1W' | '1M' | '3M' | 'ALL';
+export type ChartRange = '1H' | '8H' | '24H' | '1W' | 'ALL';

@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { serverSupa } from '@/lib/supabase';
-import { tick } from '@/lib/pricing-v3';
+import { tick, noGameTick } from '@/lib/pricing-v3';
 import { runSettlement } from '@/lib/trading';
 import { getUser } from '@/lib/auth';
 import { Player, PricePoint } from '@/types';
@@ -47,6 +47,15 @@ export async function POST(req: NextRequest) {
     }
 
     const db = serverSupa();
+
+    // ── Distributed dedup lock ─────────────────────────────────────────────
+    // Atomically claim the tick slot. If another request ran within the last
+    // 4 seconds, this UPDATE matches no rows and we return early.
+    // If the RPC fails for any reason, fall through and run the tick anyway.
+    const { data: claimed, error: lockError } = await db.rpc('claim_tick_slot', { min_interval_ms: 4000 });
+    if (!lockError && claimed === false) {
+      return NextResponse.json({ success: true, skipped: true });
+    }
 
     // ── Load active players ────────────────────────────────────────────────
     const { data: players } = await db
@@ -110,13 +119,45 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString();
     const inserts: any[] = [];
 
+    // ── Game state: determine if live games are active ────────────────────
+    // Reads from game_schedule_cache (written by bdl-poller every hour).
+    // Falls back to live tick if cache is absent (safe default).
+    const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const { data: scheduleRow } = await db
+      .from('game_schedule_cache')
+      .select('has_live_games, games, fetched_at')
+      .eq('date_key', todayKey)
+      .single();
+
+    const hasLiveGames = scheduleRow?.has_live_games ?? false;
+
+    // Compute hours until next game tip-off for O-U proximity scaling
+    let hoursUntilNextGame = Infinity;
+    if (scheduleRow?.games) {
+      const games = scheduleRow.games as any[];
+      const now = Date.now();
+      for (const g of games) {
+        if (g.status && !/final/i.test(g.status) && !/\bq[1-4]\b|\bht\b|\bot\b/i.test(g.status)) {
+          // Scheduled game — try to parse tip-off time
+          const d = g.date ? new Date(g.date).getTime() : NaN;
+          if (!isNaN(d) && d > now) {
+            const h = (d - now) / 3_600_000;
+            if (h < hoursUntilNextGame) hoursUntilNextGame = h;
+          }
+        }
+      }
+    }
+
     // ── Tick each player ─────────────────────────────────────────────────
     for (const p of players) {
       const vol24h           = volume24hMap[p.id] ?? 0;
       const lastTradeAt      = p.last_trade_at ? new Date(p.last_trade_at).getTime() : 0;
       const timeSinceTradeMs = lastTradeAt > 0 ? Date.now() - lastTradeAt : 60 * 60 * 1000;
 
-      const t = tick(p as Player, histories[p.id] ?? [], vol24h, timeSinceTradeMs);
+      // Route to O-U no-game model when market is quiet
+      const t = hasLiveGames
+        ? tick(p as Player, histories[p.id] ?? [], vol24h, timeSinceTradeMs)
+        : noGameTick(p as Player, histories[p.id] ?? [], hoursUntilNextGame, vol24h);
 
       const prev         = p.current_price;
       const price24hAgo  = price24hMap[p.id] ?? prev;

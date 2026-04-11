@@ -27,7 +27,7 @@
 // ============================================================
 
 import { Player, PricePoint } from '@/types';
-import { PRICING_V3 as C, SEASON } from '@/config/constants';
+import { PRICING_V3 as C, NO_GAME_PRICING as NG, SEASON } from '@/config/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITY
@@ -533,6 +533,110 @@ export interface TickResult {
   momentumBreaker: boolean;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// NO-GAME TICK — Ornstein-Uhlenbeck mean-reversion process
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Used when no NBA game is in progress. Keeps prices visibly alive while
+// preventing exploitation:
+//
+//   P(t+1) = P(t) + α_eff·(FV − P(t)) + σ_eff·Z_clamped
+//
+// Why this is non-exploitable:
+//   Drift at α=0.004, $10 deviation = $0.04/tick.
+//   Noise is $0.20/tick (5× the drift signal).
+//   Cumulative noise over N ticks = ±$0.20·√N >> cumulative drift gain.
+//   Any trade trying to ride the drift loses to fee + noise uncertainty.
+//
+// α varies with:
+//   - Game proximity (ramps up as tip-off approaches — faster convergence)
+//   - Settlement proximity (fast lock-in during final 48h)
+//   - Player liquidity (high-volume players revert slower — already near FV)
+//
+// σ varies with:
+//   - Game proximity (pre-game anticipation raises volatility)
+//   - Player liquidity (high-liquidity players are quieter)
+//   - Hard Z-clamp at ±2 eliminates fat tails entirely
+//
+export function noGameTick(
+  player:               Player,
+  history:              PricePoint[],
+  hoursUntilNextGame:   number,    // Infinity if no games today; 0 just before tip-off
+  recentVolume24hUSD:   number,
+): TickResult {
+  const fv      = computeFairValue(player);
+  const evScore = computeEVScore(player);
+  const twap    = computeTWAP(history);
+  const vol     = computeVol(history);
+  const hts     = hoursToSettlement();
+  const cur     = Number(player.current_price);
+  const px      = Number(player.pool_x);
+  const py      = Number(player.pool_y);
+
+  // ── Effective reversion speed (α) ────────────────────────────────────────
+  // Scales up approaching tip-off (price should be near FV when trading starts)
+  // and approaching settlement (final convergence).
+  let alpha = NG.alpha_base;
+
+  // Proximity ramp: within 8h of game, alpha increases linearly
+  const hClamped = Math.max(0, Math.min(NG.proximity_window_hours, hoursUntilNextGame));
+  const proximityFraction = 1 - hClamped / NG.proximity_window_hours; // 0 far, 1 at tip-off
+  alpha += NG.alpha_base * proximityFraction * 0.5; // up to 50% boost near tip-off
+
+  // Settlement ramp: within 48h, alpha triples to lock price onto FV
+  if (hts < NG.settlement_ramp_hours) {
+    const settlementFraction = 1 - hts / NG.settlement_ramp_hours;
+    alpha *= (1 + (NG.settlement_alpha_mult - 1) * settlementFraction);
+  }
+
+  // Liquidity dampening: high-volume players already efficient, less reversion needed
+  const liquidityScale = 1 / Math.sqrt(1 + Math.max(0, recentVolume24hUSD) / NG.liquidity_base);
+  alpha = Math.min(NG.alpha_max, alpha * liquidityScale);
+
+  // ── Effective volatility (σ) ─────────────────────────────────────────────
+  // Pre-game anticipation: σ scales up as tip-off approaches
+  const proximityBoost = 1 + (NG.proximity_boost_max - 1) * proximityFraction;
+  const sigma = NG.sigma_base * proximityBoost * liquidityScale * cur;
+
+  // ── Bounded Gaussian noise ────────────────────────────────────────────────
+  // Box-Muller transform, Z clamped at ±noise_clamp → no fat tails
+  const u1 = Math.random(), u2 = Math.random();
+  const z        = Math.sqrt(-2 * Math.log(Math.max(u1, 1e-10))) * Math.cos(2 * Math.PI * u2);
+  const zClamped = Math.max(-NG.noise_clamp, Math.min(NG.noise_clamp, z));
+  const noise    = sigma * zClamped;
+
+  // ── O-U drift toward fair value ───────────────────────────────────────────
+  const drift = alpha * (fv - cur);
+
+  // ── Combine and hard-cap ──────────────────────────────────────────────────
+  const rawMove    = drift + noise;
+  const maxMove    = cur * NG.max_tick_pct;
+  const cappedMove = Math.max(-maxMove, Math.min(maxMove, rawMove));
+  const newPrice   = parseFloat(Math.max(C.min_price, cur + cappedMove).toFixed(2));
+
+  // ── Recalibrate AMM pools to new price ───────────────────────────────────
+  const k        = px * py;
+  const newPoolX = k > 0 ? parseFloat(Math.sqrt(k / newPrice).toFixed(6)) : px;
+  const newPoolY = k > 0 ? parseFloat((k / newPoolX).toFixed(4)) : py;
+
+  // In no-game mode the oracle is the only signal — weights reflect this
+  const weights: PriceWeights = { wAmm: 0.05, wFv: 0.90, wTwap: 0.05 };
+
+  return {
+    blendedPrice:    newPrice,
+    ammSpot:         parseFloat(newPrice.toFixed(2)),
+    fairValue:       fv,
+    twap:            parseFloat((twap > 0 ? twap : cur).toFixed(2)),
+    evScore:         parseFloat(evScore.toFixed(2)),
+    volatility:      parseFloat(vol.toFixed(4)),
+    weights,
+    newPoolX,
+    newPoolY,
+    marketDepth:     parseFloat(computeMarketDepth(player, fv, recentVolume24hUSD).toFixed(2)),
+    momentumBreaker: false, // momentum breaker inactive during no-game periods
+  };
+}
+
 export function tick(
   player:               Player,
   history:              PricePoint[],
@@ -568,10 +672,13 @@ export function tick(
   const drift = alpha * (fv - ammSpot);
 
   // ── Dampened noise ────────────────────────────────────────────────────────
+  // Use a minimum vol floor so noise never collapses to near-zero when the
+  // market is quiet. This guarantees $1–$5 visible moves per tick on typical shares.
+  const effectiveVol = Math.max(vol, C.noise_min_vol);
   const noiseDamp = Math.exp(-absDev / C.noise_damp_decay);
   const u1 = Math.random(), u2 = Math.random();
   const z   = Math.sqrt(-2 * Math.log(Math.max(u1, 1e-10))) * Math.cos(2 * Math.PI * u2);
-  const noise = z * vol * ammSpot * C.noise_scale * noiseDamp;
+  const noise = z * effectiveVol * ammSpot * C.noise_scale * noiseDamp;
 
   let newAmmSpot = ammSpot + drift + noise;
   const maxMove  = ammSpot * C.max_tick;

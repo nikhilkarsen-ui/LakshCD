@@ -137,9 +137,9 @@ export const PRICING_V3 = {
   fee_cap: 0.05,                    // maximum fee: 5%
 
   // ── Price Blend Weights ───────────────────────────────────────────────────
-  // Oracle-dominant. AMM is a signal, not the source of truth.
-  w_amm_base:  0.15,   // was 0.40 — AMM is minority weight
-  w_fv_base:   0.65,   // was 0.40 — oracle is the anchor
+  // AMM drives visible per-tick movement. FV anchors the fair price.
+  w_amm_base:  0.35,   // higher AMM weight = visible price movement each tick
+  w_fv_base:   0.45,   // FV still dominates overall direction
   w_twap_base: 0.20,
 
   // ── Tick / Mean Reversion ─────────────────────────────────────────────────
@@ -147,13 +147,14 @@ export const PRICING_V3 = {
   drift_season_boost: 0.50,
   deviation_boost_threshold: 0.08,
   deviation_boost_multiplier: 0.50,
-  noise_scale: 0.020,               // quieter noise
+  noise_scale: 1.2,                 // vol-scaled noise — pairs with noise_min_vol floor
+  noise_min_vol: 0.05,              // minimum vol used for noise (prevents near-zero movement)
   noise_damp_decay: 0.15,
-  max_tick: 0.020,                  // max 2% AMM spot move per tick
+  max_tick: 0.08,                   // AMM spot can move up to 8% per tick
 
   // ── Dynamic Weight Adjustments ───────────────────────────────────────────
   target_vol: 0.015,
-  idle_halflife_ms: 90_000,         // AMM weight decays faster when idle (90s)
+  idle_halflife_ms: 300_000,        // 5-min half-life — AMM weight stays relevant longer
   avg_daily_volume: 50_000,
   // Volume bonus is REMOVED from weight shifting to AMM.
   // High volume no longer makes AMM more dominant.
@@ -202,6 +203,45 @@ export const ANTI_MANIP_V3 = {
   // Dynamic fee distance from FV
   // Applied on top of base fee when price is away from FV
   deviation_fee_scale: 3.0,
+} as const;
+
+// ── No-Game Ornstein-Uhlenbeck Pricing ───────────────────────────────────────
+// Used when no NBA game is in progress. Keeps prices alive without creating
+// exploitable drift or large jumps.
+//
+// Model: P(t+1) = P(t) + α·(FV - P(t)) + σ_eff · Z_clamped
+//
+// Anti-exploitation proof:
+//   At α=0.004, a $10 deviation on $200 player = $0.04/tick drift.
+//   Noise is $0.20/tick (5× larger than drift signal).
+//   To profit from drift: need $0.04 × N ticks > fee.
+//   Over N ticks, cumulative noise = ±$0.20×√N >> drift gain.
+//   Drift is permanently below the fee + noise floor → non-exploitable.
+export const NO_GAME_PRICING = {
+  // ── O-U reversion ──────────────────────────────────────────────────────────
+  alpha_base: 0.004,          // reversion speed/tick; half-life = ln(2)/0.004 ≈ 14 min
+  alpha_max:  0.012,          // ceiling — prevents runaway convergence near settlement
+
+  // ── Noise ──────────────────────────────────────────────────────────────────
+  sigma_base:  0.0010,        // relative σ/tick → $0.20 on $200 player (1σ)
+  noise_clamp: 2.0,           // Z-score hard cap — eliminates fat tails entirely
+
+  // ── Per-tick cap ───────────────────────────────────────────────────────────
+  max_tick_pct: 0.0025,       // absolute max move: 0.25%/tick = $0.50 on $200
+
+  // ── Game proximity: σ scales up as next game approaches ───────────────────
+  // Rationale: pre-game anticipation raises real-world bid-ask spreads.
+  proximity_window_hours: 8,  // start scaling up σ within 8h of next game
+  proximity_boost_max:    1.6,// σ peaks at 1.6× base in the hour before tip-off
+
+  // ── Liquidity dampening: high-volume players move less ────────────────────
+  // High liquidity → efficient price → less noise needed to feel "alive"
+  liquidity_base: 50_000,     // $50k/day = neutral; above this, noise damps down
+
+  // ── Settlement convergence ─────────────────────────────────────────────────
+  // Within 48h of settlement, ramp alpha up so price locks onto FV
+  settlement_ramp_hours: 48,
+  settlement_alpha_mult: 3.0, // alpha up to 3× base in final 48h
 } as const;
 
 // Per-event price impact as a fraction of current_price.

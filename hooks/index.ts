@@ -23,6 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!sb) { setLoading(false); return; }
     sb.auth.getSession().then(({ data: { session: s } }) => { setSession(s); setUser(s?.user ?? null); setLoading(false); });
     const { data: { subscription } } = sb.auth.onAuthStateChange(async (ev, s) => {
+      if (ev === 'TOKEN_REFRESHED' && !s) { setUser(null); setSession(null); setLoading(false); return; }
       setSession(s); setUser(s?.user ?? null); setLoading(false);
       if (ev === 'SIGNED_IN' && s?.user && !created.current) {
         created.current = true;
@@ -122,7 +123,7 @@ export function usePlayers() {
 }
 
 // --- Player Detail ---
-export function usePlayerDetail(id: string | null, range: ChartRange = '1D') {
+export function usePlayerDetail(id: string | null, range: ChartRange = '24H') {
   const [player, setPlayer] = useState<Player | null>(null);
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [loading, setLoading] = useState(false);
@@ -207,6 +208,25 @@ export function useTrade() {
     finally { setExecuting(false); }
   }, [tokenRef]);
   return { execute: exec, executing };
+}
+
+// --- Price ticker ---
+// Fires the server-side tick from the active browser tab.
+// Only runs when the tab is visible to avoid background tabs piling on.
+export function usePriceTicker() {
+  const tokenRef = useTokenRef();
+  useEffect(() => {
+    const fire = async () => {
+      const token = tokenRef.current;
+      if (!token) return;
+      try {
+        await fetch('/api/prices/tick', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      } catch {}
+    };
+    const d = setTimeout(fire, 2000);
+    const i = setInterval(fire, POLL.prices);
+    return () => { clearTimeout(d); clearInterval(i); };
+  }, [tokenRef]);
 }
 
 // --- Countdown (kept for any components that still use it) ---
