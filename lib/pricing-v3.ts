@@ -444,9 +444,9 @@ export function computeBlendWeights(
   timeSinceLastTradeMs: number,
   hts:                  number,
 ): PriceWeights {
-  let wAmm  = C.w_amm_base;
-  let wFv   = C.w_fv_base;
-  let wTwap = C.w_twap_base;
+  let wAmm:  number = C.w_amm_base;
+  let wFv:   number = C.w_fv_base;
+  let wTwap: number = C.w_twap_base;
 
   // 1. High volatility: shift from AMM → FV
   const volRatio = vol / C.target_vol;
