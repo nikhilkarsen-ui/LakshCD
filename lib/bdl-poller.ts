@@ -6,12 +6,12 @@
 //
 // Decision tree (runs on every cron invocation):
 //
-//   1. Check game_schedule_cache for today (0 API calls if fresh)
-//      └─ If stale (>1h old): fetch /games?dates[]=today (1 req)
+//   1. Check game_schedule_cache for today (0 API calls if fresh, <5 min old)
+//      └─ If stale (>5 min old): fetch /games?dates[]=today (1 req)
 //
 //   2. Are any games currently in progress?
-//      YES → try /live_box_scores (1 req, paid tier)
-//             on 402/null → fall back to /stats?dates[]=today (1 req)
+//      YES → /live_box_scores (1 req, All-Star tier — guaranteed available)
+//             on unexpected null → fall back to /stats?dates[]=today (1 req)
 //      NO, games later today → skip stat fetch entirely
 //      NO, no games today → skip everything
 //
@@ -68,7 +68,10 @@ interface ScheduleCache {
   hasAnyGames:   boolean;
 }
 
-const SCHEDULE_TTL_MS = 60 * 60 * 1000; // refresh schedule every hour
+// All-Star tier: 60 req/min budget. Refresh every 5 min so we detect
+// game start/end within 5 minutes instead of up to 60.
+// Cost: 1 req / 5 min = 12 req/hour — negligible.
+const SCHEDULE_TTL_MS = 5 * 60 * 1000;
 
 async function getGameSchedule(db: ReturnType<typeof serverSupa>): Promise<ScheduleCache> {
   const dateKey = todayEasternDate();
@@ -249,7 +252,10 @@ export async function runPoll(): Promise<PollResult> {
     let gameStatus: 'in_progress' | 'final' = 'final';
 
     if (schedule.hasLiveGames) {
-      // Try live box scores first (paid tier — 1 API call)
+      // All-Star tier: /live_box_scores is guaranteed available.
+      // An empty map means the game just tipped off — keep as in_progress,
+      // writeStatCache will write 0s for players not yet in the map.
+      // Only fall back to /stats if the endpoint returns null (unexpected 402/403).
       try {
         statsMap   = await fetchLiveBoxScores();
         apiCalls++;
@@ -260,13 +266,14 @@ export async function runPoll(): Promise<PollResult> {
       }
     }
 
-    if (!statsMap || statsMap.size === 0) {
-      // Fall back to completed game stats for today (free tier — 1 API call)
+    if (statsMap === null) {
+      // /live_box_scores was unavailable (unexpected on All-Star tier) — fall back
+      // to completed game stats so we don't return empty-handed.
       const date = todayEasternDate();
       try {
         statsMap   = await fetchStatsByDate(date);
         apiCalls++;
-        gameStatus = 'final';
+        gameStatus = schedule.hasLiveGames ? 'in_progress' : 'final';
       } catch (e) {
         if (e instanceof RateLimitError) throw e;
         console.error('Stats fetch failed:', e);

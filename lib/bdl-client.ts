@@ -4,8 +4,8 @@
 // Rate-limit-aware wrapper around the BDL REST API.
 //
 // Budget: 60 req/min on All-Star tier.
-// We target ≤ 30 req/min (50% buffer) so spikes and retries
-// never push us over the hard limit.
+// We target ≤ 55 req/min (8% headroom) — well within limits even
+// during peak usage (live games + retries + injury sync).
 //
 // Design:
 //   - Every request is logged to bdl_poll_log in Supabase
@@ -25,8 +25,8 @@ import { serverSupa } from './supabase';
 
 export const BDL_BASE = 'https://api.balldontlie.io/v1';
 
-// Target: ≤ 30 requests/minute (50% of the 60/min hard limit)
-const MAX_RPM = 30;
+// Target: ≤ 55 requests/minute (8% headroom below 60/min hard limit)
+const MAX_RPM = 55;
 
 export class RateLimitError extends Error {
   constructor(public currentRpm: number) {

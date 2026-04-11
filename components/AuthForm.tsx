@@ -25,7 +25,7 @@ export default function AuthForm({ onSignIn, onSignUp }: AuthFormProps) {
       if (response?.error) {
         setToast({ msg: response.error.message || 'Unable to complete request.', type: 'err' });
       } else {
-        setToast({ msg: mode === 'signUp' ? 'Account created. If approved, you’ll be signed in shortly.' : 'Signed in successfully.', type: 'ok' });
+        setToast({ msg: mode === 'signUp' ? "Account created. If approved, you'll be signed in shortly." : 'Signed in successfully.', type: 'ok' });
       }
     } catch (err: any) {
       setToast({ msg: err?.message || 'Something went wrong.', type: 'err' });
@@ -111,7 +111,7 @@ export default function AuthForm({ onSignIn, onSignUp }: AuthFormProps) {
               </button>
             </p>
           )}
-          <p>Account creation only works for approved beta emails. If you’re not approved yet, join the waitlist.</p>
+          <p>Account creation only works for approved beta emails. If you're not approved yet, join the waitlist.</p>
         </div>
       </div>
     </div>
