@@ -15,7 +15,7 @@
 //   Position concentration cap: no account > 10% of market cap
 //
 // Price formula (neutral market):
-//   blended = 0.15 × AMM_spot + 0.65 × FairValue + 0.20 × TWAP_30min
+//   blended = 0.35 × AMM_spot + 0.45 × FairValue + 0.20 × TWAP_30min
 //
 // Settlement price formula:
 //   settlement = 0.80 × FinalFairValue + 0.20 × TWAP_24h
@@ -84,14 +84,14 @@ export function computeFairValue(player: Player): number {
 
   // Games-availability discount: if season is >20% progressed and player
   // has played <50% of expected games, discount FV proportionally.
-  // This partially handles injury/absence without needing explicit injury tracking.
+  // SKIPPED when explicit injury status is present — the injury discount
+  // already captures availability. Double-discounting would be too aggressive.
   const progress = seasonProgress();
+  const hasInjuryStatus = !!(player as any).injury_status;
   let availabilityDiscount = 1.0;
-  if (progress > 0.20) {
+  if (!hasInjuryStatus && progress > 0.20) {
     const expectedGames   = Math.floor(SEASON.total_games * progress);
     const gamesRatio      = Math.min(1, gp / Math.max(1, expectedGames));
-    // Discount linearly: if played 50% of expected games, FV = 75% of full-pace FV
-    // (0.5 + 0.5 = 1 → full; 0 + 0.5 = 0.5 → half... we use lerp between gamesRatio and 1)
     availabilityDiscount  = 0.5 + 0.5 * gamesRatio;
   }
 
