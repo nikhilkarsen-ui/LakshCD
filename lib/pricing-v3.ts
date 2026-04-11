@@ -476,15 +476,15 @@ export function computeBlendWeights(
     wTwap -= shift * 0.20;
   }
 
-  wAmm  = Math.max(0, wAmm);
-  wFv   = Math.max(0, wFv);
-  wTwap = Math.max(0, wTwap);
-  const total = wAmm + wFv + wTwap;
+  const nAmm  = Math.max(0, Number(wAmm));
+  const nFv   = Math.max(0, Number(wFv));
+  const nTwap = Math.max(0, Number(wTwap));
+  const total = nAmm + nFv + nTwap;
 
   return {
-    wAmm:  parseFloat((wAmm  / total).toFixed(4)),
-    wFv:   parseFloat((wFv   / total).toFixed(4)),
-    wTwap: parseFloat((wTwap / total).toFixed(4)),
+    wAmm:  parseFloat((nAmm  / total).toFixed(4)),
+    wFv:   parseFloat((nFv   / total).toFixed(4)),
+    wTwap: parseFloat((nTwap / total).toFixed(4)),
   };
 }
 
