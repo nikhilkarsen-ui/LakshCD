@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const db = serverSupa();
-  const { data: users } = await db.from('users').select('id, display_name, balance, initial_balance');
+  const { data: users } = await db.from('users').select('id, display_name, balance, initial_balance').eq('is_approved', true);
   const { data: allPos } = await db
     .from('positions')
     .select('user_id, shares_owned, avg_cost_basis, player:players(current_price)');

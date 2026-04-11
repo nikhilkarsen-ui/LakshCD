@@ -256,8 +256,8 @@ async function executeSell(userId: string, req: TradeRequest, ip: string | null 
     if (amm.blocked) return { success: false, error: amm.blockReason };
 
     feeRate    = amm.feeRate;
-    actualSold = Math.min(snap(amm.qty), sharesOwned);
-    if (actualSold <= 0) return { success: false, error: 'Trade amount too small' };
+    actualSold = sharesOwned; // sell exactly what's owned — amm.qty can differ by rounding
+    if (actualSold <= 0) return { success: false, error: 'No shares to sell' };
 
     effPrice  = amm.effectivePrice * (2 - gate.fillPenalty);
     usdOut    = effPrice * actualSold;
