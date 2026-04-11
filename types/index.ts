@@ -29,6 +29,11 @@ export interface Player {
   // AMM pools
   pool_x: number; pool_y: number;
 
+  // Injury report (synced daily from BDL /injuries)
+  injury_status:      'Out For Season' | 'Suspended' | 'Out' | 'Doubtful' | 'Questionable' | 'Day-To-Day' | 'Probable' | null;
+  injury_description: string | null;
+  injury_updated_at:  string | null;
+
   // Settlement
   is_active: boolean;
   final_settlement_price: number | null;

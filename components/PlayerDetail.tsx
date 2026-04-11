@@ -202,12 +202,17 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
           <path d="M19 12H5M12 19l-7-7 7-7" />
         </svg>
         <div className="flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-base leading-tight">{player.name}</span>
             {isLive && (
               <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse inline-block" />
                 LIVE
+              </span>
+            )}
+            {player.injury_status && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/25">
+                {player.injury_status}
               </span>
             )}
           </div>
@@ -330,10 +335,20 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
           </div>
           <div>
             <div className="text-lk-dim">Status</div>
-            <div className={`font-semibold mt-0.5 ${settled ? 'text-lk-accent' : isLive ? 'text-red-400' : 'text-lk-text'}`}>
-              {settled ? `Settled @ $${(player.final_settlement_price || 0).toFixed(2)}` : isLive ? '🔴 Game Live' : 'Active'}
+            <div className={`font-semibold mt-0.5 ${settled ? 'text-lk-accent' : isLive ? 'text-red-400' : player.injury_status ? 'text-orange-400' : 'text-lk-text'}`}>
+              {settled
+                ? `Settled @ $${(player.final_settlement_price || 0).toFixed(2)}`
+                : isLive
+                ? '🔴 Game Live'
+                : player.injury_status ?? 'Active'}
             </div>
           </div>
+          {player.injury_description && (
+            <div className="col-span-2">
+              <div className="text-lk-dim">Injury</div>
+              <div className="font-medium mt-0.5 text-orange-300/80">{player.injury_description}</div>
+            </div>
+          )}
         </div>
       </Card>
 

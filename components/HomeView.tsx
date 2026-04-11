@@ -122,7 +122,18 @@ export default function HomeView({
               <Avatar name={p.name} i={i} />
 
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm truncate">{p.name}</div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-sm truncate">{p.name}</span>
+                  {p.injury_status && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 border border-orange-500/20 flex-shrink-0">
+                      {p.injury_status === 'Out For Season' || p.injury_status === 'Suspended' ? 'OUT' :
+                       p.injury_status === 'Out' ? 'OUT' :
+                       p.injury_status === 'Doubtful' ? 'DTD' :
+                       p.injury_status === 'Questionable' ? 'Q' :
+                       p.injury_status === 'Day-To-Day' ? 'DTD' : 'P'}
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs text-lk-dim">{p.team}</div>
               </div>
 

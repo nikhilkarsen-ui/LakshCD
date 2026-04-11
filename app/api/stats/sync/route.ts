@@ -10,18 +10,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUser } from '@/lib/auth';
 import { syncStats } from '@/lib/stats';
+import { syncInjuries } from '@/lib/injury-sync';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 async function handle() {
   try {
-    const result = await syncStats();
+    const [statsResult, injuryResult] = await Promise.all([
+      syncStats(),
+      syncInjuries(),
+    ]);
     return NextResponse.json({
       success: true,
-      updated: result.updated,
-      mapped: result.mapped,
-      skipped: result.skipped,
-      errors: result.errors,
+      stats: {
+        updated: statsResult.updated,
+        mapped:  statsResult.mapped,
+        skipped: statsResult.skipped,
+        errors:  statsResult.errors,
+      },
+      injuries: {
+        injured: injuryResult.injured,
+        cleared: injuryResult.cleared,
+        total:   injuryResult.total,
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (e: any) {

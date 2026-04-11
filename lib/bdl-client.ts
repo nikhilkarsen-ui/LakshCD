@@ -170,6 +170,21 @@ export async function fetchStatsByDate(date: string): Promise<Map<number, any>> 
   return map;
 }
 
+/**
+ * Current injury report. Returns a map of bdl_player_id → injury row.
+ * Shape: { player: { id, first_name, last_name }, status, description, updated_at }
+ */
+export async function fetchInjuries(): Promise<Map<number, any>> {
+  const json = await bdlFetch('/injuries?per_page=100');
+  const map  = new Map<number, any>();
+  for (const entry of json?.data ?? []) {
+    if (entry?.player?.id != null) {
+      map.set(Number(entry.player.id), entry);
+    }
+  }
+  return map;
+}
+
 /** Season averages for a list of BDL player IDs (single batched request). */
 export async function fetchSeasonAverages(bdlIds: number[]): Promise<Map<number, any>> {
   const idParams = bdlIds.map(id => `player_ids[]=${id}`).join('&');

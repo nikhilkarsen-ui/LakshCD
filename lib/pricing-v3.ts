@@ -28,6 +28,7 @@
 
 import { Player, PricePoint } from '@/types';
 import { PRICING_V3 as C, NO_GAME_PRICING as NG, SEASON } from '@/config/constants';
+import { injuryDiscount } from './injury-sync';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITY
@@ -102,13 +103,17 @@ export function computeFairValue(player: Player): number {
   const evScore = Math.max(0, Math.min(1000, shrunkScore * 1000 * availabilityDiscount));
   const baseFV  = Math.max(C.min_price, evScore * C.fv_scale);
 
+  // Injury discount: reduces FV based on current injury report status.
+  // Out For Season/Suspended = 70% off; Out = 40% off; Doubtful = 20% off; etc.
+  const injuryMult = injuryDiscount((player as any).injury_status);
+
   // Live game boost (dampened to ±10% in v3)
   const boostActive =
     player.live_boost_expires_at != null &&
     Date.now() < new Date(player.live_boost_expires_at).getTime();
   const boost = boostActive ? Number(player.live_game_boost ?? 0) : 0;
 
-  return parseFloat((baseFV * (1 + boost * C.live_boost_scale)).toFixed(2));
+  return parseFloat((baseFV * injuryMult * (1 + boost * C.live_boost_scale)).toFixed(2));
 }
 
 export function computeEVScore(player: Player): number {
