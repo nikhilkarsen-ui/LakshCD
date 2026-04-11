@@ -179,6 +179,7 @@ export const PRICING_V3: Record<string, number> = {
   // ── Position concentration limit ─────────────────────────────────────────
   // No account can hold shares worth more than this fraction of total market cap.
   max_position_pct: 0.10,           // 10% of outstanding market cap per user
+  min_float_shares: 500,            // skip concentration check until 500 shares are in circulation
 };
 
 // ── Anti-Manipulation v3 — Hardened ──────────────────────────────────────────

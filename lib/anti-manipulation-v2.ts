@@ -194,6 +194,10 @@ export async function wouldExceedConcentration(
 
   const totalShares = (allPositions ?? []).reduce((s: number, p: any) => s + Number(p.shares_owned), 0);
 
+  // Don't enforce concentration on a thin float — early buyers would always
+  // trip this because they'd own 100% of the tiny existing float.
+  if (totalShares < PRICING_V3.min_float_shares) return { exceeded: false };
+
   // User's current holding
   const { data: myPos } = await db
     .from('positions')
