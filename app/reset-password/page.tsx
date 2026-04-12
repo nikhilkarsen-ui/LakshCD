@@ -1,20 +1,11 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { browserSupa } from '@/lib/supabase';
 import LakshLogo from '@/components/LakshLogo';
 import { Toast } from '@/components/ui';
 
 type Stage = 'waiting' | 'ready' | 'done' | 'error';
-
-// Use a plain supabase-js client (not @supabase/ssr) so it correctly detects
-// the #access_token hash fragment and fires the PASSWORD_RECOVERY event.
-function makeClient(): SupabaseClient {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
-}
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -23,34 +14,41 @@ export default function ResetPasswordPage() {
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
-  // Keep a single client instance for this page so updateUser reuses the same session
-  const sbRef = useRef<SupabaseClient | null>(null);
 
   useEffect(() => {
-    const sb = makeClient();
-    sbRef.current = sb;
+    let sb: ReturnType<typeof browserSupa>;
+    try { sb = browserSupa(); } catch { setStage('error'); return; }
 
-    // onAuthStateChange fires PASSWORD_RECOVERY when Supabase processes the hash
+    let resolved = false;
+
+    // PASSWORD_RECOVERY fires after Supabase exchanges the code/hash for a session.
+    // Works for both implicit (#access_token) and PKCE (?code=) flows.
     const { data: { subscription } } = sb.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setStage('ready');
+      if (event === 'PASSWORD_RECOVERY') {
+        resolved = true;
+        setStage('ready');
+      }
     });
 
-    // Fallback: if the page loaded after the hash was already consumed (e.g. fast
-    // navigation), check the session — but only treat it as a recovery if the URL
-    // still carries the type=recovery hint or an access_token.
-    const hash = typeof window !== 'undefined' ? window.location.hash : '';
-    if (hash.includes('type=recovery') || hash.includes('access_token')) {
+    // Fallback: event may have already fired before the listener attached.
+    // Only trust an existing session if the URL carries a recovery indicator.
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashFragment = window.location.hash;
+    const hasToken =
+      hashFragment.includes('type=recovery') ||
+      hashFragment.includes('access_token') ||
+      searchParams.has('code'); // PKCE flow lands here
+
+    if (hasToken) {
       sb.auth.getSession().then(({ data: { session } }) => {
-        if (session) setStage('ready');
+        if (session && !resolved) { resolved = true; setStage('ready'); }
       });
-    } else {
-      // No recovery token present at all — show error after a short grace period
-      // (give onAuthStateChange a tick to fire first)
-      const t = setTimeout(() => setStage('error'), 1500);
-      return () => { clearTimeout(t); subscription.unsubscribe(); };
     }
 
-    return () => subscription.unsubscribe();
+    // Show error only after giving Supabase enough time to process the token
+    const t = setTimeout(() => { if (!resolved) setStage('error'); }, 6000);
+
+    return () => { clearTimeout(t); subscription.unsubscribe(); };
   }, []);
 
   const submit = async (e: React.FormEvent) => {
@@ -65,7 +63,7 @@ export default function ResetPasswordPage() {
     }
     setLoading(true);
     try {
-      const sb = sbRef.current!;
+      const sb = browserSupa();
       const { error } = await sb.auth.updateUser({ password: pw });
       if (error) {
         setToast({ msg: error.message || 'Failed to update password.', type: 'err' });
