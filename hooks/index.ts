@@ -95,9 +95,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const forgotPassword = useCallback(async (e: string) => {
     if (!sb) throw new Error('Supabase client not available');
-    const redirectTo = typeof window !== 'undefined'
-      ? `${window.location.origin}/reset-password`
-      : process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/reset-password` : undefined;
+    const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '')
+      ?? (typeof window !== 'undefined' ? window.location.origin : '');
+    const redirectTo = base ? `${base}/reset-password` : undefined;
     return await sb.auth.resetPasswordForEmail(e, { redirectTo });
   }, [sb]);
 
