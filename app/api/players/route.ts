@@ -24,7 +24,31 @@ export async function GET() {
       return sum + shares * price;
     }, 0);
 
-    return NextResponse.json({ players, market_cap: parseFloat(market_cap.toFixed(2)) });
+    // Sparkline data — last ~30 tick snapshots per player (ticks fire simultaneously,
+    // so ordering DESC + limit gives evenly distributed recency across all players).
+    let sparklines: Record<string, { price: number }[]> = {};
+    if (players.length > 0) {
+      const playerIds = players.map((p: any) => p.id);
+      const { data: hist } = await db
+        .from('price_history')
+        .select('player_id, price')
+        .in('player_id', playerIds)
+        .order('created_at', { ascending: false })
+        .limit(players.length * 30); // ~450 rows for 15 players
+
+      // Group by player, then reverse so oldest → newest
+      const grouped: Record<string, { price: number }[]> = {};
+      for (const row of (hist ?? [])) {
+        if (!grouped[row.player_id]) grouped[row.player_id] = [];
+        grouped[row.player_id].push({ price: Number(row.price) });
+      }
+      for (const id of Object.keys(grouped)) {
+        grouped[id].reverse(); // DESC→ASC
+      }
+      sparklines = grouped;
+    }
+
+    return NextResponse.json({ players, market_cap: parseFloat(market_cap.toFixed(2)), sparklines });
   } catch (error: any) {
     console.error('Players API error:', error);
     return NextResponse.json({ error: 'Players API failed', details: error.message }, { status: 500 });

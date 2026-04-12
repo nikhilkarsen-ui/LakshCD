@@ -342,7 +342,7 @@ function Shell() {
   const { user, session, loading: authLoading, signIn, signUp, signOut, forgotPassword } = useAuth();
   const [approvalState, setApprovalState] = useState<'unknown' | 'approved' | 'pending' | 'error'>('unknown');
   const router = useRouter();
-  const { players, marketCap, loading: pLoading } = usePlayers();
+  const { players, marketCap, sparklines, loading: pLoading } = usePlayers();
   const { portfolio } = usePortfolio();
   const [tab, setTab] = useState('home');
   const [pid, setPid] = useState<string | null>(null);
@@ -404,7 +404,7 @@ function Shell() {
     <div className="min-h-screen bg-lk-bg">
       <Header balance={balance} onSignOut={signOut} />
       <main className="max-w-lg mx-auto pb-24">
-        {tab === 'home' && !pid && <HomeView players={players} marketCap={marketCap} loading={pLoading} onSelect={selectPlayer} />}
+        {tab === 'home' && !pid && <HomeView players={players} marketCap={marketCap} sparklines={sparklines} loading={pLoading} onSelect={selectPlayer} />}
         {tab === 'home' && pid && <PlayerDetail playerId={pid} onBack={back} />}
         {tab === 'portfolio' && <PortfolioView onSelect={selectPlayer} />}
         {tab === 'leaderboard' && <LeaderboardView />}

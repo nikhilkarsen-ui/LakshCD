@@ -118,6 +118,7 @@ function useTokenRef() {
 export function usePlayers() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [marketCap, setMarketCap] = useState<number>(0);
+  const [sparklines, setSparklines] = useState<Record<string, { price: number }[]>>({});
   const [loading, setLoading] = useState(true);
   const fetch_ = useCallback(async () => {
     try {
@@ -126,11 +127,12 @@ export function usePlayers() {
       const d = await r.json();
       setPlayers(d.players || []);
       setMarketCap(d.market_cap ?? 0);
+      setSparklines(d.sparklines ?? {});
     } catch (error) { console.error('Failed to fetch players:', error); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { fetch_(); const i = setInterval(fetch_, POLL.prices); return () => clearInterval(i); }, [fetch_]);
-  return { players, marketCap, loading, refetch: fetch_ };
+  return { players, marketCap, sparklines, loading, refetch: fetch_ };
 }
 
 // --- Player Detail ---
