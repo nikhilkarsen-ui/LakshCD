@@ -95,6 +95,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const forgotPassword = useCallback(async (e: string) => {
     if (!sb) throw new Error('Supabase client not available');
+    // Check account exists before triggering reset — avoids leaking "sent" confirmation
+    // to people probing for valid emails, and gives a clear UX message.
+    const res = await fetch('/api/auth/check-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: e }),
+    });
+    if (res.ok) {
+      const { exists } = await res.json();
+      if (!exists) return { error: new Error('No account found with that email address.') };
+    }
     const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '')
       ?? (typeof window !== 'undefined' ? window.location.origin : '');
     const redirectTo = base ? `${base}/reset-password` : undefined;
