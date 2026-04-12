@@ -7,7 +7,7 @@ import { POLL } from '@/config/constants';
 import type { Session, User } from '@supabase/supabase-js';
 
 // --- Auth Context ---
-interface AuthCtx { user: User | null; session: Session | null; loading: boolean; signUp: (e: string, p: string, n: string) => Promise<any>; signIn: (e: string, p: string) => Promise<any>; signOut: () => Promise<void>; }
+interface AuthCtx { user: User | null; session: Session | null; loading: boolean; signUp: (e: string, p: string, n: string) => Promise<any>; signIn: (e: string, p: string) => Promise<any>; signOut: () => Promise<void>; forgotPassword: (e: string) => Promise<any>; }
 const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -93,7 +93,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null); setSession(null);
   }, [sb]);
 
-  const val = useMemo(() => ({ user, session, loading, signUp, signIn, signOut }), [user, session, loading, signUp, signIn, signOut]);
+  const forgotPassword = useCallback(async (e: string) => {
+    if (!sb) throw new Error('Supabase client not available');
+    const redirectTo = typeof window !== 'undefined'
+      ? `${window.location.origin}/reset-password`
+      : process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/reset-password` : undefined;
+    return await sb.auth.resetPasswordForEmail(e, { redirectTo });
+  }, [sb]);
+
+  const val = useMemo(() => ({ user, session, loading, signUp, signIn, signOut, forgotPassword }), [user, session, loading, signUp, signIn, signOut, forgotPassword]);
   return React.createElement(Ctx.Provider, { value: val }, children);
 }
 export function useAuth() { const c = useContext(Ctx); if (!c) throw new Error('Wrap in AuthProvider'); return c; }
