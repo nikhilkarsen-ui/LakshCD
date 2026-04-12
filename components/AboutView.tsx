@@ -131,7 +131,7 @@ export default function AboutView() {
       <div className="grid grid-cols-3 gap-2">
         {[
           { label: 'Starting cash', value: '$10,000' },
-          { label: 'Trade fee', value: '0.1%' },
+          { label: 'Trade fee', value: '0.2%+' },
           { label: 'Price updates', value: 'Every 5s' },
         ].map(k => (
           <div key={k.label} className="rounded-xl border border-lk-border bg-lk-card p-3 text-center">

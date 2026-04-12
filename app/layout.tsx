@@ -1,7 +1,23 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-export const metadata: Metadata = { title: 'Laksh — The 24/7 Sports Exchange', description: 'Trade athlete futures contracts in real time.' };
+export const metadata: Metadata = {
+  title: 'Laksh — The 24/7 Sports Market',
+  description: 'Buy and sell NBA player shares. Prices update every 5 seconds. Everything settles at season end.',
+  openGraph: {
+    title: 'Laksh — The 24/7 Sports Market',
+    description: 'Buy and sell NBA player shares. Prices update every 5 seconds. Everything settles at season end.',
+    url: 'https://laksh.app',
+    siteName: 'Laksh',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Laksh — The 24/7 Sports Market',
+    description: 'Buy and sell NBA player shares. Prices update every 5 seconds. Everything settles at season end.',
+  },
+  metadataBase: new URL('https://laksh.app'),
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
