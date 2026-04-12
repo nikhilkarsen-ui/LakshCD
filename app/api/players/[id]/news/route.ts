@@ -39,9 +39,9 @@ function parseRSS(xml: string): Article[] {
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = params;
+  const { id } = await params;
 
   // Fetch player name from DB
   const db = serverSupa();

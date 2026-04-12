@@ -40,12 +40,12 @@ function templateDigest(player: any): string {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const user = await getApprovedAppUser(req);
   if (!user) return unauth();
 
-  const { id } = params;
+  const { id } = await params;
   const db = serverSupa();
 
   // Check cache
