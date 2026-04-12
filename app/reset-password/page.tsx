@@ -1,11 +1,20 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { browserSupa } from '@/lib/supabase';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import LakshLogo from '@/components/LakshLogo';
 import { Toast } from '@/components/ui';
 
 type Stage = 'waiting' | 'ready' | 'done' | 'error';
+
+// Use a plain supabase-js client (not @supabase/ssr) so it correctly detects
+// the #access_token hash fragment and fires the PASSWORD_RECOVERY event.
+function makeClient(): SupabaseClient {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+}
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -14,21 +23,32 @@ export default function ResetPasswordPage() {
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
+  // Keep a single client instance for this page so updateUser reuses the same session
+  const sbRef = useRef<SupabaseClient | null>(null);
 
   useEffect(() => {
-    let sb: ReturnType<typeof browserSupa> | null = null;
-    try { sb = browserSupa(); } catch { setStage('error'); return; }
-    if (!sb) { setStage('error'); return; }
+    const sb = makeClient();
+    sbRef.current = sb;
 
-    // Supabase reads the #access_token hash and fires PASSWORD_RECOVERY automatically
+    // onAuthStateChange fires PASSWORD_RECOVERY when Supabase processes the hash
     const { data: { subscription } } = sb.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setStage('ready');
     });
 
-    // Also check if a session is already active from the hash (in case the event already fired)
-    sb.auth.getSession().then(({ data: { session } }) => {
-      if (session) setStage('ready');
-    });
+    // Fallback: if the page loaded after the hash was already consumed (e.g. fast
+    // navigation), check the session — but only treat it as a recovery if the URL
+    // still carries the type=recovery hint or an access_token.
+    const hash = typeof window !== 'undefined' ? window.location.hash : '';
+    if (hash.includes('type=recovery') || hash.includes('access_token')) {
+      sb.auth.getSession().then(({ data: { session } }) => {
+        if (session) setStage('ready');
+      });
+    } else {
+      // No recovery token present at all — show error after a short grace period
+      // (give onAuthStateChange a tick to fire first)
+      const t = setTimeout(() => setStage('error'), 1500);
+      return () => { clearTimeout(t); subscription.unsubscribe(); };
+    }
 
     return () => subscription.unsubscribe();
   }, []);
@@ -45,7 +65,7 @@ export default function ResetPasswordPage() {
     }
     setLoading(true);
     try {
-      const sb = browserSupa();
+      const sb = sbRef.current!;
       const { error } = await sb.auth.updateUser({ password: pw });
       if (error) {
         setToast({ msg: error.message || 'Failed to update password.', type: 'err' });
