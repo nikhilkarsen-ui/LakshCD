@@ -21,7 +21,10 @@ export default function LeaderboardView() {
                 <div className="w-7 text-center font-bold text-sm">{i===0?'🥇':i===1?'🥈':i===2?'🥉':<span className="text-lk-dim">#{i+1}</span>}</div>
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold ${me?'bg-lk-accent-dim text-lk-accent':'bg-lk-border text-lk-dim'}`}>{e.display_name.slice(0,2).toUpperCase()}</div>
                 <div className="flex-1 min-w-0"><div className={`text-sm font-medium truncate ${me?'text-lk-accent font-bold':''}`}>{me?`${e.display_name} (You)`:e.display_name}</div><div className="text-[11px] text-lk-dim">{e.num_trades} trades · {fmt(e.portfolio_value)}</div></div>
-                <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg ${e.return_pct>=0?'text-lk-accent bg-lk-accent-dim':'text-lk-red bg-lk-red-dim'}`}>{fmtPct(e.return_pct)}</span>
+                <div className="text-right flex-shrink-0">
+                  <div className={`text-xs font-semibold ${e.return_pct>=0?'text-lk-accent':'text-lk-red'}`}>{fmtPct(e.return_pct)}</div>
+                  <div className={`text-[11px] ${e.return_usd>=0?'text-lk-accent/70':'text-lk-red/70'}`}>{e.return_usd>=0?'+':''}{fmt(e.return_usd)}</div>
+                </div>
               </div>
             );
           })}

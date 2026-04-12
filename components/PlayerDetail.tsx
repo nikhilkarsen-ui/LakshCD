@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Player, PricePoint, ChartRange } from '@/types';
 import { Card, Label, Skel, Toast, fmt, fmtPct } from './ui';
-import { usePlayerDetail, useTrade, usePortfolio } from '@/hooks';
+import { usePlayerDetail, useTrade, usePortfolio, useAuth } from '@/hooks';
 import { SEASON } from '@/config/constants';
 import {
   getDataForTimeframe,
@@ -11,6 +11,46 @@ import {
   timeframeHighLow,
   type ChartTimeframe,
 } from '@/lib/chart-utils';
+import type { Article } from '@/app/api/players/[id]/news/route';
+
+// ── AI Digest ─────────────────────────────────────────────────────────────────
+function useDigest(playerId: string, token: string | null) {
+  const [digest, setDigest] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!token) { setLoading(false); return; }
+    fetch(`/api/players/${playerId}/digest`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.digest) setDigest(d.digest); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [playerId, token]);
+  return { digest, loading };
+}
+
+// ── News ──────────────────────────────────────────────────────────────────────
+function useNews(playerId: string) {
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [loading, setLoading]   = useState(true);
+  useEffect(() => {
+    fetch(`/api/players/${playerId}/news`)
+      .then(r => r.ok ? r.json() : { articles: [] })
+      .then(d => setArticles(d.articles || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [playerId]);
+  return { articles, loading };
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(diff / 3_600_000);
+  if (h < 1) return `${Math.floor(diff / 60_000)}m ago`;
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
 
 // ── Synthetic fallback (used when real history is sparse) ─────────────────────
 function lcg(seed: number) {
@@ -92,9 +132,13 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
   const [isLive, setIsLive]   = useState(false);
   const autoRangedRef         = useRef(false);
 
-  const { player, priceHistory } = usePlayerDetail(playerId, range);
-  const { execute, executing }   = useTrade();
-  const { portfolio, refetch }   = usePortfolio();
+  const { player, priceHistory }   = usePlayerDetail(playerId, range);
+  const { execute, executing }     = useTrade();
+  const { portfolio, refetch }     = usePortfolio();
+  const { session }                = useAuth();
+  const token                      = session?.access_token ?? null;
+  const { digest, loading: dLoading } = useDigest(playerId, token);
+  const { articles, loading: nLoading } = useNews(playerId);
 
   // ── Detect live game via /api/live-data ──────────────────────────────────
   useEffect(() => {
@@ -484,6 +528,61 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
           </p>
         </Card>
       )}
+
+      {/* ── AI Digest ── */}
+      <Card className="mt-3">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-lk-dim">AI Outlook</span>
+          <span className="text-[10px] text-lk-dim bg-lk-border/50 px-2 py-0.5 rounded-full">Updated daily</span>
+        </div>
+        {dLoading ? (
+          <div className="space-y-2">
+            <Skel className="h-3.5 w-full" />
+            <Skel className="h-3.5 w-5/6" />
+            <Skel className="h-3.5 w-4/6" />
+          </div>
+        ) : digest ? (
+          <p className="text-xs text-lk-dim leading-relaxed">{digest}</p>
+        ) : (
+          <p className="text-xs text-lk-dim">Outlook unavailable.</p>
+        )}
+      </Card>
+
+      {/* ── News ── */}
+      <Card className="mt-3">
+        <Label>Latest News</Label>
+        {nLoading ? (
+          <div className="space-y-3 mt-1">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="space-y-1.5">
+                <Skel className="h-3.5 w-full" />
+                <Skel className="h-3 w-2/5" />
+              </div>
+            ))}
+          </div>
+        ) : articles.length === 0 ? (
+          <p className="text-xs text-lk-dim py-2">No recent news found.</p>
+        ) : (
+          <div className="mt-1 divide-y divide-lk-border/40">
+            {articles.map((a, i) => (
+              <a
+                key={i}
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-col gap-0.5 py-2.5 hover:opacity-80 transition-opacity first:pt-1"
+              >
+                <span className="text-xs font-medium text-lk-text leading-snug line-clamp-2">{a.title}</span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-[11px] text-lk-accent">{a.source}</span>
+                  <span className="text-lk-dim text-[11px]">·</span>
+                  <span className="text-[11px] text-lk-dim">{timeAgo(a.publishedAt)}</span>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

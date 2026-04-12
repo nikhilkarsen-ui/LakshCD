@@ -86,7 +86,7 @@ export interface UserProfile {
 
 export interface LeaderboardEntry {
   user_id: string; display_name: string;
-  portfolio_value: number; return_pct: number; num_trades: number;
+  portfolio_value: number; return_usd: number; return_pct: number; num_trades: number;
 }
 
 // Portfolio is simple: cash + market value of holdings
