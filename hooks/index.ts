@@ -108,10 +108,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '')
       ?? (typeof window !== 'undefined' ? window.location.origin : '');
-    // Redirect to /auth/callback which exchanges the PKCE code server-side,
-    // then forwards to /reset-password where the session is already active.
-    const redirectTo = base ? `${base}/auth/callback?next=/reset-password` : undefined;
-    return await sb.auth.resetPasswordForEmail(e, { redirectTo });
+    const redirectTo = base ? `${base}/reset-password` : undefined;
+    // Use a plain implicit-flow client for the reset email so Supabase sends
+    // the access_token directly in the hash fragment — no PKCE code exchange needed.
+    const { createClient: mkClient } = await import('@supabase/supabase-js');
+    const resetClient = mkClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { flowType: 'implicit', persistSession: false } },
+    );
+    return await resetClient.auth.resetPasswordForEmail(e, { redirectTo });
   }, [sb]);
 
   const val = useMemo(() => ({ user, session, loading, signUp, signIn, signOut, forgotPassword }), [user, session, loading, signUp, signIn, signOut, forgotPassword]);

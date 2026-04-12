@@ -1,49 +1,61 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { browserSupa } from '@/lib/supabase';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import LakshLogo from '@/components/LakshLogo';
 import { Toast } from '@/components/ui';
 
 type Stage = 'waiting' | 'ready' | 'done' | 'error';
 
+// Dedicated implicit-flow client for the reset page.
+// createBrowserClient (@supabase/ssr) uses PKCE which requires a server-side
+// code exchange. Here we use the standard supabase-js client with implicit
+// flow so the #access_token hash is processed entirely in the browser.
+function makeResetClient(): SupabaseClient {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { flowType: 'implicit' } },
+  );
+}
+
 export default function ResetPasswordClient() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [stage, setStage] = useState<Stage>('waiting');
   const [pw, setPw] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
+  const sbRef = useRef<SupabaseClient | null>(null);
 
   useEffect(() => {
-    // If the callback route flagged an error, show it immediately
-    if (searchParams.get('error')) { setStage('error'); return; }
+    const sb = makeResetClient();
+    sbRef.current = sb;
 
-    // Session was already exchanged server-side by /auth/callback.
-    // If it's present here, we're good to show the form.
-    let sb: ReturnType<typeof browserSupa>;
-    try { sb = browserSupa(); } catch { setStage('error'); return; }
+    let resolved = false;
 
-    sb.auth.getSession().then(({ data: { session } }) => {
-      setStage(session ? 'ready' : 'error');
+    // The implicit-flow client reads the #access_token hash automatically and
+    // fires PASSWORD_RECOVERY once the session is established.
+    const { data: { subscription } } = sb.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        resolved = true;
+        setStage('ready');
+      }
     });
-  }, [searchParams]);
+
+    // Timeout: if no PASSWORD_RECOVERY fires within 5s the link is bad/expired.
+    const t = setTimeout(() => { if (!resolved) setStage('error'); }, 5000);
+
+    return () => { clearTimeout(t); subscription.unsubscribe(); };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pw !== confirm) {
-      setToast({ msg: 'Passwords do not match.', type: 'err' });
-      return;
-    }
-    if (pw.length < 8) {
-      setToast({ msg: 'Password must be at least 8 characters.', type: 'err' });
-      return;
-    }
+    if (pw !== confirm) { setToast({ msg: 'Passwords do not match.', type: 'err' }); return; }
+    if (pw.length < 8) { setToast({ msg: 'Password must be at least 8 characters.', type: 'err' }); return; }
     setLoading(true);
     try {
-      const sb = browserSupa();
-      const { error } = await sb.auth.updateUser({ password: pw });
+      const { error } = await sbRef.current!.auth.updateUser({ password: pw });
       if (error) {
         setToast({ msg: error.message || 'Failed to update password.', type: 'err' });
       } else {
@@ -94,28 +106,12 @@ export default function ResetPasswordClient() {
               <p className="text-sm font-semibold text-white">Set a new password</p>
               <p className="text-xs text-lk-dim mt-1">Choose a strong password for your account.</p>
             </div>
-            <input
-              type="password"
-              value={pw}
-              onChange={e => setPw(e.target.value)}
-              placeholder="New password"
-              required
-              minLength={8}
-              className={inputClass}
-            />
-            <input
-              type="password"
-              value={confirm}
-              onChange={e => setConfirm(e.target.value)}
-              placeholder="Confirm new password"
-              required
-              className={inputClass}
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3.5 rounded-xl bg-lk-accent text-lk-bg font-semibold text-sm hover:brightness-110 disabled:opacity-50"
-            >
+            <input type="password" value={pw} onChange={e => setPw(e.target.value)}
+              placeholder="New password" required minLength={8} className={inputClass} />
+            <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
+              placeholder="Confirm new password" required className={inputClass} />
+            <button type="submit" disabled={loading}
+              className="w-full py-3.5 rounded-xl bg-lk-accent text-lk-bg font-semibold text-sm hover:brightness-110 disabled:opacity-50">
               {loading ? 'Updating…' : 'Update password'}
             </button>
           </form>
