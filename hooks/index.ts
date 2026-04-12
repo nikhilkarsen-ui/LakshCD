@@ -108,7 +108,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '')
       ?? (typeof window !== 'undefined' ? window.location.origin : '');
-    const redirectTo = base ? `${base}/reset-password` : undefined;
+    // Redirect to /auth/callback which exchanges the PKCE code server-side,
+    // then forwards to /reset-password where the session is already active.
+    const redirectTo = base ? `${base}/auth/callback?next=/reset-password` : undefined;
     return await sb.auth.resetPasswordForEmail(e, { redirectTo });
   }, [sb]);
 

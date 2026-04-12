@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { browserSupa } from '@/lib/supabase';
 import LakshLogo from '@/components/LakshLogo';
 import { Toast } from '@/components/ui';
@@ -9,6 +9,7 @@ type Stage = 'waiting' | 'ready' | 'done' | 'error';
 
 export default function ResetPasswordPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [stage, setStage] = useState<Stage>('waiting');
   const [pw, setPw] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -16,40 +17,18 @@ export default function ResetPasswordPage() {
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
 
   useEffect(() => {
+    // If the callback route flagged an error, show it immediately
+    if (searchParams.get('error')) { setStage('error'); return; }
+
+    // Session was already exchanged server-side by /auth/callback.
+    // If it's present here, we're good to show the form.
     let sb: ReturnType<typeof browserSupa>;
     try { sb = browserSupa(); } catch { setStage('error'); return; }
 
-    let resolved = false;
-
-    // PASSWORD_RECOVERY fires after Supabase exchanges the code/hash for a session.
-    // Works for both implicit (#access_token) and PKCE (?code=) flows.
-    const { data: { subscription } } = sb.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        resolved = true;
-        setStage('ready');
-      }
+    sb.auth.getSession().then(({ data: { session } }) => {
+      setStage(session ? 'ready' : 'error');
     });
-
-    // Fallback: event may have already fired before the listener attached.
-    // Only trust an existing session if the URL carries a recovery indicator.
-    const searchParams = new URLSearchParams(window.location.search);
-    const hashFragment = window.location.hash;
-    const hasToken =
-      hashFragment.includes('type=recovery') ||
-      hashFragment.includes('access_token') ||
-      searchParams.has('code'); // PKCE flow lands here
-
-    if (hasToken) {
-      sb.auth.getSession().then(({ data: { session } }) => {
-        if (session && !resolved) { resolved = true; setStage('ready'); }
-      });
-    }
-
-    // Show error only after giving Supabase enough time to process the token
-    const t = setTimeout(() => { if (!resolved) setStage('error'); }, 6000);
-
-    return () => { clearTimeout(t); subscription.unsubscribe(); };
-  }, []);
+  }, [searchParams]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
