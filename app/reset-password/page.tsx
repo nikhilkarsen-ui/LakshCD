@@ -1,6 +1,5 @@
 'use client';
-export const dynamic = 'force-dynamic';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { browserSupa } from '@/lib/supabase';
 import LakshLogo from '@/components/LakshLogo';
@@ -8,7 +7,7 @@ import { Toast } from '@/components/ui';
 
 type Stage = 'waiting' | 'ready' | 'done' | 'error';
 
-export default function ResetPasswordPage() {
+function ResetPasswordInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [stage, setStage] = useState<Stage>('waiting');
@@ -142,5 +141,13 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResetPasswordInner />
+    </Suspense>
   );
 }
