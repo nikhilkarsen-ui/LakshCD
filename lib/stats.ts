@@ -143,7 +143,7 @@ export async function syncStats(): Promise<SyncResult> {
   try {
     const idParams = withIds.map((p: any) => `player_ids[]=${p.bdl_player_id}`).join('&');
     // 2024 = the 2024-25 NBA season (Oct 2024 – Jun 2025)
-    const url = `${BDL_BASE}/season_averages/general?season=2024&season_type=regular&type=base&${idParams}`;
+    const url = `${BDL_BASE}/season_averages/general?season=2025&season_type=regular&type=base&${idParams}`;
 
     const res = await fetch(url, { headers: bdlHeaders(), cache: 'no-store' });
     if (!res.ok) {
