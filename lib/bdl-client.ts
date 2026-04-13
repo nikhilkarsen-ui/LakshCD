@@ -188,7 +188,7 @@ export async function fetchInjuries(): Promise<Map<number, any>> {
 /** Season averages for a list of BDL player IDs (single batched request). */
 export async function fetchSeasonAverages(bdlIds: number[]): Promise<Map<number, any>> {
   const idParams = bdlIds.map(id => `player_ids[]=${id}`).join('&');
-  const json     = await bdlFetch(`/season_averages/general?season=2025&season_type=regular&type=base&${idParams}`);
+  const json     = await bdlFetch(`/season_averages?season=2025&${idParams}`);
   const map      = new Map<number, any>();
   for (const entry of json?.data ?? []) {
     if (entry?.player?.id != null) map.set(Number(entry.player.id), entry.stats);
