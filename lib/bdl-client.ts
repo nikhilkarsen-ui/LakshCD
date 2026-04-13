@@ -175,7 +175,7 @@ export async function fetchStatsByDate(date: string): Promise<Map<number, any>> 
  * Shape: { player: { id, first_name, last_name }, status, description, updated_at }
  */
 export async function fetchInjuries(): Promise<Map<number, any>> {
-  const json = await bdlFetch('/injuries?per_page=100');
+  const json = await bdlFetch('/player_injuries?per_page=100');
   const map  = new Map<number, any>();
   for (const entry of json?.data ?? []) {
     if (entry?.player?.id != null) {
