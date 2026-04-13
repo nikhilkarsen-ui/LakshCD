@@ -9,8 +9,16 @@ function DownloadButton() {
   return (
     <button
       onClick={handlePrint}
-      className="print:hidden fixed bottom-8 right-8 z-50 flex items-center gap-2.5 rounded-full bg-[#111827] border border-[#374151] px-5 py-3 text-sm font-semibold text-white shadow-2xl hover:bg-[#1f2937] transition-all"
-      style={{ fontFamily: 'DM Sans, sans-serif' }}
+      style={{
+        position: 'fixed', bottom: 32, right: 32, zIndex: 50,
+        display: 'flex', alignItems: 'center', gap: 10,
+        background: '#0f172a', color: '#fff',
+        border: '1px solid #334155',
+        borderRadius: 999, padding: '10px 20px',
+        fontSize: 13, fontWeight: 600, cursor: 'pointer',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+        fontFamily: "'DM Sans', sans-serif",
+      }}
     >
       <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
         <path d="M12 16l-4-4h3V4h2v8h3l-4 4zM4 18h16v2H4z"/>
@@ -325,6 +333,7 @@ export default function ReportPage() {
 
         @media print {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          button { display: none !important; }
           .cover { min-height: auto; padding-bottom: 0; }
           pre { white-space: pre-wrap; }
           h2, h3 { break-after: avoid; }
