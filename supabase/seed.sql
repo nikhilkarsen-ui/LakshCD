@@ -18,7 +18,7 @@ VALUES
   ('Donovan Mitchell','Cleveland Cavaliers','SG',232.50,231.00,590.40,24.0,4.5,4.2,22.8,58, 21505.38, 4999999.35),
   ('Jalen Brunson','New York Knicks','PG',285.60,283.80,730.20,28.7,6.7,3.5,26.0,63, 17517.86, 5003101.10),
   ('Joel Embiid','Philadelphia 76ers','C',310.20,308.00,830.40,33.1,5.7,11.0,35.5,39, 16118.96, 5000494.91),
-  ('Trae Young','San Antonio Spurs','PG',262.15,260.50,640.70,25.7,10.8,3.0,23.4,61, 19073.01, 4999982.47);
+  ('Trae Young','Washington Wizards','PG',262.15,260.50,640.70,25.7,10.8,3.0,23.4,61, 19073.01, 4999982.47);
 
 -- Generate 24hr price history
 DO $$

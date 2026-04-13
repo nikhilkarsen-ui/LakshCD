@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Player, PricePoint, ChartRange } from '@/types';
 import { Card, Label, Skel, Toast, fmt, fmtPct } from './ui';
-import { usePlayerDetail, useTrade, usePortfolio, useAuth } from '@/hooks';
+import { usePlayerDetail, useTrade, useTradePreview, usePortfolio, useAuth } from '@/hooks';
 import { SEASON } from '@/config/constants';
 import {
   getDataForTimeframe,
@@ -128,6 +128,7 @@ function LiveDot({ cx, cy, color }: { cx?: number; cy?: number; color: string })
 export default function PlayerDetail({ playerId, onBack }: { playerId: string; onBack: () => void }) {
   const [range, setRange]     = useState<ChartRange>('24H');
   const [dollars, setDollars] = useState('');
+  const [activeSide, setActiveSide] = useState<'buy' | 'sell'>('buy');
   const [toast, setToast]     = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
   const [isLive, setIsLive]   = useState(false);
   const autoRangedRef         = useRef(false);
@@ -137,6 +138,12 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
   const { portfolio, refetch }     = usePortfolio();
   const { session }                = useAuth();
   const token                      = session?.access_token ?? null;
+  const enteredDollarsNum          = parseFloat(dollars) || 0;
+  const { preview, loading: previewLoading } = useTradePreview(
+    player?.id ?? null,
+    enteredDollarsNum,
+    activeSide,
+  );
   const { digest, loading: dLoading } = useDigest(playerId, token);
   const { articles, loading: nLoading } = useNews(playerId);
 
@@ -231,8 +238,7 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
   const settlementDate = new Date(SEASON.settlement_date).toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
   });
-  const enteredDollars   = parseFloat(dollars) || 0;
-  const approxSharesSell = player.current_price > 0 ? enteredDollars / player.current_price : 0;
+  const approxSharesSell = player.current_price > 0 ? enteredDollarsNum / player.current_price : 0;
   const sellExceedsOwned = approxSharesSell > sharesOwned + 0.001;
   const maxSellDollars   = sharesOwned * player.current_price;
 
@@ -484,16 +490,38 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
             </button>
           )}
 
-          {enteredDollars > 0 && (
+          {enteredDollarsNum > 0 && (
             <div className="p-3 rounded-lg bg-lk-accent/5 border border-lk-accent/10 mb-3 text-xs space-y-1.5">
-              <div className="flex justify-between">
-                <span className="text-lk-dim">Est. Shares</span>
-                <span>{(enteredDollars / player.current_price).toFixed(4)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-lk-dim">Fee (est. 0.2–0.5%)</span>
-                <span>~${(enteredDollars * 0.003).toFixed(2)}</span>
-              </div>
+              {previewLoading && (
+                <div className="text-lk-dim text-center py-1">Calculating...</div>
+              )}
+              {!previewLoading && preview && !preview.blocked && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-lk-dim">You {activeSide === 'buy' ? 'spend' : 'receive'}</span>
+                    <span className="font-medium">${enteredDollarsNum.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-lk-dim">
+                    <span>Transaction fee ({preview.feeRate}%)</span>
+                    <span>−${preview.fee?.toFixed(2)}</span>
+                  </div>
+                  <div className="border-t border-lk-border/50 pt-1.5 flex justify-between">
+                    <span className="text-lk-dim">{activeSide === 'buy' ? 'Into shares' : 'Net proceeds'}</span>
+                    <span className="font-medium">${preview.netForShares?.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold pt-0.5">
+                    <span>{activeSide === 'buy' ? 'Shares received' : 'Shares sold'}</span>
+                    <span>{preview.shares?.toFixed(4)}</span>
+                  </div>
+                  <div className="flex justify-between text-lk-dim">
+                    <span>Price per share</span>
+                    <span>${preview.costPerShare?.toFixed(2)} <span className="text-lk-dim/60">(mkt ${preview.marketPrice?.toFixed(2)})</span></span>
+                  </div>
+                </>
+              )}
+              {!previewLoading && preview?.blocked && (
+                <div className="text-lk-red font-medium">{preview.blockReason}</div>
+              )}
               {sellExceedsOwned && (
                 <div className="text-lk-red font-medium pt-1">
                   Exceeds your holdings ({sharesOwned.toFixed(4)} shares ≈ {fmt(maxSellDollars)})
@@ -503,13 +531,13 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
           )}
 
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => doTrade('buy')}
-              disabled={executing || !dollars || parseFloat(dollars) <= 0}
+            <button onClick={() => { setActiveSide('buy'); doTrade('buy'); }}
+              disabled={executing || !dollars || parseFloat(dollars) <= 0 || (preview?.blocked ?? false)}
               className="py-4 rounded-xl text-sm font-semibold bg-lk-accent text-lk-bg hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95">
               {executing ? '...' : '▲ Buy'}
             </button>
-            <button onClick={() => doTrade('sell')}
-              disabled={executing || !dollars || parseFloat(dollars) <= 0 || !hasPosition || sellExceedsOwned}
+            <button onClick={() => { setActiveSide('sell'); doTrade('sell'); }}
+              disabled={executing || !dollars || parseFloat(dollars) <= 0 || !hasPosition || sellExceedsOwned || (activeSide === 'sell' && (preview?.blocked ?? false))}
               className="py-4 rounded-xl text-sm font-semibold bg-lk-red text-white hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95">
               {executing ? '...' : '▼ Sell'}
             </button>

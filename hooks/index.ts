@@ -219,6 +219,42 @@ export function useLeaderboard() {
   return { leaderboard: board, totalTraders: total, loading };
 }
 
+// --- Trade preview ---
+export function useTradePreview(playerId: string | null, dollars: number, side: 'buy' | 'sell') {
+  const [preview, setPreview] = useState<{
+    blocked: boolean; blockReason?: string;
+    shares?: number; costPerShare?: number; marketPrice?: number;
+    fee?: number; feeRate?: number; netForShares?: number; slippage?: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const tokenRef   = useTokenRef();
+  const timerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!playerId || dollars <= 0) { setPreview(null); return; }
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(async () => {
+      const token = tokenRef.current;
+      if (!token) return;
+      setLoading(true);
+      try {
+        const r = await fetch(
+          `/api/trade/preview?player_id=${playerId}&dollars=${dollars}&side=${side}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        const d = await r.json();
+        setPreview(d);
+      } catch { setPreview(null); }
+      finally { setLoading(false); }
+    }, 350); // 350ms debounce
+
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [playerId, dollars, side, tokenRef]);
+
+  return { preview, loading };
+}
+
 // --- Trade executor ---
 export function useTrade() {
   const [executing, setExecuting] = useState(false);
