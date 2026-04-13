@@ -12,12 +12,12 @@
 //   5. Skip players with game_status = 'no_game'
 //
 // Price impact per event (see config/constants.ts LIVE_STATS):
-//   +0.04% per point, +0.06% per assist, +0.025% per rebound,
-//   +0.08% per steal, +0.06% per block, -0.10% per turnover.
+//   +0.06% per point, +0.08% per assist, +0.03% per rebound,
+//   +0.10% per steal, +0.08% per block, -0.05% per turnover.
 //
 // Impacts compound multiplicatively so a 30-pt game at one poll
-// (e.g. first poll of a completed game) = +1.2% from points alone.
-// A monster 30/10/10 with 4 tov ≈ +2.4% net — on a $300 share ~+$7.
+// (e.g. first poll of a completed game) = +1.8% from points alone.
+// A monster 30/10/10 with 4 tov ≈ +3.8% net — on a $300 share ~+$11.
 //
 // The tick (every 5s) continues to drift price toward EFV and
 // recalibrates AMM pools — so live bumps are immediately reflected
@@ -48,18 +48,21 @@ function computeEfficiency(s: {
 }
 
 // tanh-based boost for the EFV target drift (-1..+1).
-// Compares cumulative game stats to season averages.
+// Compares cumulative game pts/ast/reb to season averages.
+// Intentionally excludes shooting efficiency: missed shots are already
+// reflected in lower point totals. Penalising them again in the boost
+// caused elite high-volume scorers (e.g. Jokic) to show negative boosts
+// on legitimately good games, making price fall while they were playing well.
 function computeBoost(
-  seasonPpg: number, seasonApg: number, seasonRpg: number, seasonEff: number,
-  gamePts:   number, gameAst:   number, gameReb:   number, gameEff:   number,
+  seasonPpg: number, seasonApg: number, seasonRpg: number, _seasonEff: number,
+  gamePts:   number, gameAst:   number, gameReb:   number, _gameEff:   number,
 ): number {
   const ratio = (season: number, game: number) =>
     season > 0 ? (game - season) / season : 0;
   const raw =
-    ratio(seasonPpg, gamePts) * 0.35 +
-    ratio(seasonApg, gameAst) * 0.20 +
-    ratio(seasonRpg, gameReb) * 0.20 +
-    ratio(seasonEff, gameEff) * 0.25;
+    ratio(seasonPpg, gamePts) * 0.50 +   // points: primary driver
+    ratio(seasonApg, gameAst) * 0.30 +   // assists
+    ratio(seasonRpg, gameReb) * 0.20;    // rebounds
   return parseFloat(Math.tanh(raw * 1.5).toFixed(4));
 }
 

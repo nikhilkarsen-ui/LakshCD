@@ -109,9 +109,9 @@ export const PRICING_V3: Record<string, number> = {
   credibility_games: 20,       // full credibility at 20 games (was 30)
   league_avg_score: 0.45,      // fallback only — player-specific priors preferred
 
-  // Live boost is dampened: max ±10% FV shift (was 20%).
-  // Front-running the boost is still possible but profit window is halved.
-  live_boost_scale: 0.10,
+  // Live boost: max ±15% FV shift. Increased from 10% so a monster game
+  // can actually move the fair value anchor noticeably during play.
+  live_boost_scale: 0.15,
 
   // ── Virtual Market Depth ──────────────────────────────────────────────────
   // Base depth is substantially higher to resist sybil attacks.
@@ -247,15 +247,17 @@ export const NO_GAME_PRICING: Record<string, number> = {
 
 // Per-event price impact as a fraction of current_price.
 // Applied multiplicatively for each new stat event detected since last snapshot.
-// e.g. pts: 0.0004 → each new point scored moves price +0.04%.
-// A 30-pt game (if polled infrequently, all 30 detected at once) = +1.2%.
+// e.g. pts: 0.0006 → each new point scored moves price +0.06%.
+// A 30-pt game (if polled infrequently, all 30 detected at once) = +1.8%.
+// Turnover penalty is intentionally < 1 point of scoring so that a player
+// who scores 2pts but turns it over is still net-positive on the tick.
 export const LIVE_STATS = {
-  pts:  +0.0004,   // +0.04% per point
-  ast:  +0.0006,   // +0.06% per assist
-  reb:  +0.00025,  // +0.025% per rebound
-  stl:  +0.0008,   // +0.08% per steal
-  blk:  +0.0006,   // +0.06% per block
-  tov:  -0.0010,   // -0.10% per turnover
+  pts:  +0.0006,   // +0.06% per point  (was 0.04%)
+  ast:  +0.0008,   // +0.08% per assist (was 0.06%)
+  reb:  +0.0003,   // +0.03% per rebound (was 0.025%)
+  stl:  +0.0010,   // +0.10% per steal  (was 0.08%)
+  blk:  +0.0008,   // +0.08% per block  (was 0.06%)
+  tov:  -0.0005,   // -0.05% per turnover (was -0.10% — was 2.5× a point, now < 1 point)
 } as const;
 
 export const POLL = { prices: 5000, portfolio: 6000, leaderboard: 30000 } as const;

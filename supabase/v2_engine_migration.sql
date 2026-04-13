@@ -75,8 +75,11 @@ WHERE market_depth = 40000;
 -- Users can read their own pressure but only the server can write.
 ALTER TABLE trade_pressure ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "Users can view own pressure"
-  ON trade_pressure FOR SELECT
-  USING (auth.uid() = user_id);
+DO $$ BEGIN
+  CREATE POLICY "Users can view own pressure"
+    ON trade_pressure FOR SELECT
+    USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Service role bypasses RLS automatically in server-side code (serverSupa uses service key).

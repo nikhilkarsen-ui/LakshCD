@@ -9,8 +9,19 @@ CREATE TABLE users (
   display_name TEXT NOT NULL DEFAULT 'Trader',
   balance DECIMAL(12,2) NOT NULL DEFAULT 10000.00,
   initial_balance DECIMAL(12,2) NOT NULL DEFAULT 10000.00,
+  is_approved BOOLEAN NOT NULL DEFAULT false,
+  approved_at TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE waitlist (
+  id          UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email       TEXT        NOT NULL UNIQUE,
+  status      TEXT        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  notes       TEXT        DEFAULT NULL,
+  approved_at TIMESTAMPTZ DEFAULT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE players (
@@ -81,3 +92,4 @@ ALTER TABLE players DISABLE ROW LEVEL SECURITY;
 ALTER TABLE positions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE trades DISABLE ROW LEVEL SECURITY;
 ALTER TABLE price_history DISABLE ROW LEVEL SECURITY;
+ALTER TABLE waitlist DISABLE ROW LEVEL SECURITY;

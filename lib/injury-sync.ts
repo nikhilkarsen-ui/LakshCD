@@ -71,7 +71,15 @@ export async function syncInjuries(): Promise<InjurySyncResult> {
   // fetchInjuries returns a Map<bdl_player_id, injuryRow>
   // We match by name since we may not store bdl_player_id on every player.
   // We also fetch the player names from BDL so we can cross-reference.
-  const injuryMap = await fetchInjuries();
+  let injuryMap: Map<number, any>;
+  try {
+    injuryMap = await fetchInjuries();
+  } catch (e) {
+    // Endpoint unavailable on this BDL tier — skip injury sync silently
+    console.warn('[injury-sync] Injuries endpoint unavailable:', (e as Error).message);
+    return { injured: 0, cleared: 0, total: players.length };
+  }
+  if (!injuryMap) return { injured: 0, cleared: 0, total: players.length };
 
   // Build a name → injury map from BDL response
   // BDL format: { player: { first_name, last_name }, status, description }

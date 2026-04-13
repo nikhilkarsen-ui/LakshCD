@@ -11,5 +11,8 @@ create table if not exists player_digests (
 -- Service role writes; anon has no access.
 alter table player_digests enable row level security;
 
-create policy "service role full access" on player_digests
-  for all using (true) with check (true);
+DO $$ BEGIN
+  CREATE POLICY "service role full access" ON player_digests
+    FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

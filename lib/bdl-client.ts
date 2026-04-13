@@ -104,7 +104,7 @@ export async function bdlFetch(path: string, attempt = 0): Promise<any> {
       return bdlFetch(path, 1);
     }
 
-    if (res.status === 402 || res.status === 403) {
+    if (res.status === 402 || res.status === 403 || res.status === 404) {
       // Tier doesn't support this endpoint — return null so caller can fall back
       return null;
     }
