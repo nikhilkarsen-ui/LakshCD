@@ -1,4 +1,5 @@
 'use client';
+import { useRouter } from 'next/navigation';
 import { Card, Label, Skel, fmt, fmtPct } from './ui';
 import { usePortfolio, useCountdown } from '@/hooks';
 import { SEASON } from '@/config/constants';
@@ -6,6 +7,7 @@ import { SEASON } from '@/config/constants';
 export default function ProfileView({ onSignOut }: { onSignOut: () => void }) {
   const { portfolio, userProfile, trades, loading } = usePortfolio();
   const countdown = useCountdown(SEASON.settlement_date);
+  const router = useRouter();
 
   if (loading || !userProfile || !portfolio) return <div className="p-4 space-y-3"><Skel className="h-32 w-full"/><Skel className="h-28 w-full"/><Skel className="h-64 w-full"/></div>;
 
@@ -19,7 +21,15 @@ export default function ProfileView({ onSignOut }: { onSignOut: () => void }) {
         </div>
         <div className="font-bold text-lg">{userProfile.display_name}</div>
         <div className="text-xs text-lk-dim mt-1">{userProfile.email}</div>
-        <button onClick={onSignOut} className="mt-4 px-5 py-2 rounded-lg bg-lk-red/10 text-lk-red text-xs font-medium hover:bg-lk-red/20 transition-colors">Sign Out</button>
+        <div className="mt-4 flex gap-2 justify-center">
+          <button
+            onClick={() => router.push('/withdraw')}
+            className="px-5 py-2 rounded-lg bg-lk-accent/10 text-lk-accent text-xs font-medium hover:bg-lk-accent/20 transition-colors"
+          >
+            Withdraw
+          </button>
+          <button onClick={onSignOut} className="px-5 py-2 rounded-lg bg-lk-red/10 text-lk-red text-xs font-medium hover:bg-lk-red/20 transition-colors">Sign Out</button>
+        </div>
       </Card>
 
       <Card>
