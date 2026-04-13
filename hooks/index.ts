@@ -225,6 +225,7 @@ export function useTradePreview(playerId: string | null, dollars: number, side: 
     blocked: boolean; blockReason?: string;
     shares?: number; costPerShare?: number; marketPrice?: number;
     fee?: number; feeRate?: number; netForShares?: number; slippage?: number;
+    fillPenaltyWarning?: boolean;
   } | null>(null);
   const [loading, setLoading] = useState(false);
   const tokenRef   = useTokenRef();

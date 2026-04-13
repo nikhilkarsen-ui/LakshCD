@@ -262,6 +262,18 @@ export const LIVE_STATS = {
 
 export const POLL = { prices: 5000, portfolio: 6000, leaderboard: 30000 } as const;
 
+// ── Parimutuel Pool ───────────────────────────────────────────────────────────
+// All user deposits flow into a shared pool. At settlement, the distribution
+// pool is divided proportionally by each user's portfolio mark-to-market value.
+// Mid-season exits are allowed but incur an early exit fee that stays in the
+// pool (benefiting remaining participants).
+export const POOL = {
+  season_key:      '2025-26',
+  rake_rate:       0.05,   // 5%  — platform revenue on every deposit
+  early_exit_fee:  0.03,   // 3%  — fee on mid-season NAV withdrawal; stays in pool
+  min_deposit:     100,    // minimum deposit in dollars
+} as const;
+
 export const SEED_PLAYERS = [
   { name:'LeBron James',team:'Los Angeles Lakers',pos:'SF',ppg:25.8,apg:8.3,rpg:7.5,eff:28.1,gp:60,price:284.52 },
   { name:'Stephen Curry',team:'Golden State Warriors',pos:'PG',ppg:27.1,apg:5.2,rpg:4.8,eff:26.4,gp:58,price:312.18 },

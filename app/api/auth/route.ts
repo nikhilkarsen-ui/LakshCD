@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { serverSupa } from '@/lib/supabase';
 import { TRADE } from '@/config/constants';
+import { recordInitialDeposit } from '@/lib/trading';
 
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
   .split(',')
@@ -63,6 +64,11 @@ export async function POST(req: NextRequest) {
     console.error('Signup err:', error);
     return NextResponse.json({ error: 'Failed' }, { status: 500 });
   }
+
+  // Register the user's starting balance in the parimutuel pool so settlement
+  // can distribute from the pool rather than creating money from thin air.
+  // Fire-and-forget: failure is logged but doesn't break signup.
+  recordInitialDeposit(user_id, TRADE.initial_balance);
 
   return NextResponse.json({ success: true });
 }

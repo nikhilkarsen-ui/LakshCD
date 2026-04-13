@@ -63,10 +63,24 @@ export default function ProfileView({ onSignOut }: { onSignOut: () => void }) {
         )}
       </Card>
 
-      <Card className="bg-lk-red/[0.03] border-lk-red/10">
-        <Label>Settlement</Label>
-        <div className="text-sm leading-relaxed">All remaining share holdings settle automatically on <span className="text-lk-accent font-semibold">June 15, 2026</span> at each player's final season value.</div>
-        <div className="text-xl font-bold text-lk-accent mt-3 font-mono">{countdown}</div>
+      <Card className="bg-lk-accent/[0.03] border-lk-accent/10">
+        <Label>Prize Pool Payout</Label>
+        <div className="text-sm leading-relaxed text-lk-dim">
+          On <span className="text-lk-accent font-semibold">June 15, 2026</span>, the prize pool is distributed based on portfolio performance. Your payout = your portfolio value ÷ total of all portfolios × prize pool.
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Payout in</div>
+            <div className="text-lg font-bold text-lk-accent font-mono">{countdown}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Early exit fee</div>
+            <div className="text-lg font-bold text-lk-text">3%</div>
+          </div>
+        </div>
+        <div className="mt-3 text-[11px] text-lk-dim">
+          Need to exit early? Go to <span className="text-lk-text font-medium">About → Early exit</span> to withdraw at your current portfolio value minus the 3% fee.
+        </div>
       </Card>
     </div>
   );

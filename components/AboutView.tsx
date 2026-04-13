@@ -12,34 +12,46 @@ const settlementDate = new Date(SEASON.settlement_date).toLocaleDateString('en-U
 const HOW_IT_WORKS = [
   {
     step: '1',
-    title: 'Browse players',
-    body: 'Every NBA player has a live share price — the market\'s current estimate of how much they\'ll be worth at season end.',
+    title: 'You join the pool',
+    body: 'Your $10,000 enters a shared prize pool. The platform takes 5% upfront as rake — the remaining 95% is the prize pot that gets paid out at season end.',
   },
   {
     step: '2',
-    title: 'Buy shares',
-    body: 'Spend your virtual cash to buy shares. You receive shares at the current price. Cash is deducted immediately.',
+    title: 'Trade player shares',
+    body: 'Buy shares in players you believe in. Sell any shares you own at any time. Prices update every 5 seconds based on trading and live game stats.',
   },
   {
     step: '3',
-    title: 'Sell when you want',
-    body: 'Sell any shares you own back to the market at any time. You can only sell what you own.',
+    title: 'Build a stronger portfolio',
+    body: 'Your portfolio value = your cash balance + the market value of every share you hold. The more your portfolio grows relative to others, the bigger your slice of the payout.',
   },
   {
     step: '4',
-    title: 'Settle at season end',
-    body: `On ${settlementDate}, all remaining shares are automatically converted to cash at each player's final settlement price. No action required.`,
+    title: 'Pool pays out on ' + settlementDate,
+    body: `The prize pool is distributed proportionally: your payout = (your portfolio value ÷ total of all portfolios) × prize pool. Outperform the field, walk away with more than you put in.`,
   },
 ];
 
 const GLOSSARY = [
   {
+    term: 'Prize pool',
+    def: 'The total pot that gets paid out at season end. Made up of all participant deposits minus the 5% platform rake. Every dollar in the pool comes from a real participant — no money is created from thin air.',
+  },
+  {
     term: 'Share price',
-    def: 'The current market price of one share in a player. Moves up when people buy, down when people sell.',
+    def: 'The current market price of one share in a player. Moves up when people buy, down when people sell, and drifts toward fair value between trades.',
+  },
+  {
+    term: 'Portfolio value',
+    def: 'Your total mark-to-market value: cash balance + (shares held × current price for each player). This is what determines your proportional share of the payout.',
+  },
+  {
+    term: 'Proportional payout',
+    def: 'Your settlement payout = (your portfolio value ÷ sum of all portfolios) × prize pool. If your portfolio is 2% of all portfolios combined, you receive 2% of the prize pool.',
   },
   {
     term: 'Expected final value',
-    def: 'The model\'s estimate of what the share price should be at season end, based on current season stats. Prices drift toward this over time.',
+    def: 'The model\'s estimate of a player\'s share price at season end, calculated from current season stats. Prices drift toward this between trades.',
   },
   {
     term: 'Average cost',
@@ -51,15 +63,11 @@ const GLOSSARY = [
   },
   {
     term: 'Realized P&L',
-    def: 'Profit or loss you\'ve already locked in by selling. Calculated as (sell price − avg cost) × shares sold.',
+    def: 'Profit or loss locked in by selling. Calculated as (sell price − avg cost) × shares sold.',
   },
   {
-    term: 'Final settlement price',
-    def: 'The price used to settle all remaining shares at season end. Set based on the player\'s final season performance.',
-  },
-  {
-    term: 'Season settlement',
-    def: `On ${settlementDate}, every share you hold is automatically sold at the final settlement price and cash is added to your balance.`,
+    term: 'Early exit',
+    def: `Withdraw before ${settlementDate} at your current portfolio value, minus a 3% early exit fee. The fee stays in the pool — it increases the payout for everyone who stays.`,
   },
 ];
 
@@ -84,17 +92,17 @@ export default function AboutView() {
 
       {/* One-liner */}
       <p className="text-sm text-lk-text leading-relaxed">
-        Laksh is a simulated NBA player share market. Each player has a live share price — the market's collective estimate of their final season value. Buy shares in players you believe in, sell when you want, and hold through to settlement on {settlementDate}.
+        Laksh is a parimutuel NBA player market. Everyone joins with $10,000. Those funds go into a shared prize pool. Trade player shares to build the strongest portfolio — and at season end, the pool is split proportionally based on how everyone performed.
       </p>
 
       {/* Settlement + P&L row */}
       <div className="grid grid-cols-2 gap-2">
-        {/* Settlement countdown */}
+        {/* Payout countdown */}
         <div className="rounded-2xl border border-lk-accent/20 bg-lk-accent/5 p-4 flex flex-col justify-between gap-2">
           <div>
-            <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Season settlement</div>
+            <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Pool payout date</div>
             <div className="font-semibold text-sm">{settlementDate}</div>
-            <div className="text-[11px] text-lk-dim mt-0.5">Shares auto-convert to cash</div>
+            <div className="text-[11px] text-lk-dim mt-0.5">Pool distributed proportionally</div>
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-1">Countdown</div>
@@ -130,8 +138,8 @@ export default function AboutView() {
       {/* Key facts */}
       <div className="grid grid-cols-3 gap-2">
         {[
-          { label: 'Starting cash', value: '$10,000' },
-          { label: 'Trade fee', value: '0.2%+' },
+          { label: 'Pool rake', value: '5%' },
+          { label: 'Early exit fee', value: '3%' },
           { label: 'Price updates', value: 'Every 5s' },
         ].map(k => (
           <div key={k.label} className="rounded-xl border border-lk-border bg-lk-card p-3 text-center">
@@ -180,7 +188,7 @@ export default function AboutView() {
           <div>You buy 2 Giannis shares at <span className="text-lk-text">$320</span>. Your cost basis = $640.</div>
           <div>Price rises to <span className="text-lk-accent">$355</span>. Unrealized P&L = <span className="text-lk-accent">+$70</span>.</div>
           <div>You sell 1 share at $355. Realized P&L = <span className="text-lk-accent">+$35</span>. You still hold 1 share.</div>
-          <div>At season end, your last share settles at the final price. Cash is credited automatically.</div>
+          <div>At season end, your portfolio value determines your share of the prize pool — the higher relative to everyone else, the more you receive.</div>
         </div>
       </Card>
 
@@ -197,9 +205,37 @@ export default function AboutView() {
         </div>
       </Card>
 
+      {/* Investor report link */}
+      <a
+        href="/report"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-between rounded-xl border border-lk-border bg-lk-card p-3 hover:border-lk-accent/40 hover:bg-lk-accent/5 transition-colors group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-lk-accent/10 border border-lk-accent/20 flex items-center justify-center flex-shrink-0">
+            <svg width="14" height="14" fill="none" stroke="#00d4aa" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-lk-text">Investor & Founder Brief</div>
+            <div className="text-[10px] text-lk-dim">Full technical report · Save as PDF</div>
+          </div>
+        </div>
+        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" className="text-lk-dim group-hover:text-lk-accent transition-colors flex-shrink-0">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <polyline points="15 3 21 3 21 9"/>
+          <line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+      </a>
+
       {/* Disclaimer */}
       <div className="rounded-xl border border-lk-border/60 bg-lk-card/40 p-3 text-[11px] text-lk-muted leading-relaxed">
-        Laksh is a simulated trading platform for educational and entertainment purposes only. All cash is virtual. Nothing here constitutes financial advice.
+        Laksh is a simulated trading platform for educational and entertainment purposes only. All cash and pool balances are virtual. Nothing here constitutes financial advice.
       </div>
     </div>
   );

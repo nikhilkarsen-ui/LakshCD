@@ -52,14 +52,33 @@ export async function GET(req: NextRequest) {
   const costPerShare = shares > 0 ? parseFloat((dollars / shares).toFixed(4)) : 0;
   const marketPrice  = poolY > 0 && poolX > 0 ? parseFloat((poolY / poolX).toFixed(2)) : Number(player.current_price);
 
+  // Check if user has recent directional pressure that would trigger a fill penalty.
+  // We don't compute the exact penalty here (that requires the full gate check),
+  // but we flag it so the UI can warn the user their actual shares may be slightly fewer.
+  const ago5m = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data: recentTrades } = await db
+    .from('trades')
+    .select('side, total_value')
+    .eq('user_id', user.id)
+    .eq('player_id', player_id)
+    .gte('created_at', ago5m)
+    .in('side', ['buy', 'sell']);
+
+  const recentBuyPressure = (recentTrades ?? [])
+    .filter((t: any) => t.side === side)
+    .reduce((s: number, t: any) => s + Number(t.total_value), 0);
+
+  const fillPenaltyWarning = recentBuyPressure > 1000; // warn if >$1k same-direction in 5 min
+
   return NextResponse.json({
-    blocked:       false,
+    blocked:            false,
     shares,
-    costPerShare,   // what you're actually paying per share (total / shares)
-    marketPrice,    // current spot price before this trade
+    costPerShare,
+    marketPrice,
     fee,
-    feeRate:       parseFloat((amm.feeRate * 100).toFixed(2)),
+    feeRate:            parseFloat((amm.feeRate * 100).toFixed(2)),
     netForShares,
-    slippage:      parseFloat((amm.slippage * 100).toFixed(3)),
+    slippage:           parseFloat((amm.slippage * 100).toFixed(3)),
+    fillPenaltyWarning, // true = you've been trading hard; actual shares may be slightly fewer
   });
 }

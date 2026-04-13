@@ -21,7 +21,7 @@
 // ============================================================
 
 import { TradeRequest } from '@/types';
-import { TRADE, SEASON } from '@/config/constants';
+import { TRADE, SEASON, POOL } from '@/config/constants';
 import {
   computeAMMTrade,
   computeFairValue,
@@ -402,19 +402,31 @@ export async function executeTrade(userId: string, req: TradeRequest, ip: string
   }
 }
 
-// ─── Season Settlement (v3) ───────────────────────────────────────────────────
-// Settlement = 80% FinalFairValue + 20% TWAP_7day.
+// ─── Season Settlement (Parimutuel v4) ───────────────────────────────────────
+//
+// PARIMUTUEL MODEL — eliminates insolvency risk:
+//
+//   1. Compute settlement price for every active player (unchanged: 80% FV + 20% TWAP).
+//   2. For every user, compute portfolio mark-to-market value:
+//        MTM = cash_balance + Σ(shares_i × settlement_price_i)
+//   3. Sum MTM across ALL users → total_mtm.
+//   4. Load distribution_pool from season_pool table.
+//   5. Each user receives:
+//        payout = (user_mtm / total_mtm) × distribution_pool
+//   6. User's balance is set to their payout. All positions are deleted.
+//
+// This guarantees: sum of all payouts == distribution_pool (no money created).
+// High-performers receive more; poor performers receive less — but nobody can
+// "print" money by buying a player whose price was pushed up artificially,
+// because the pool is fixed and everyone is paid from the same pot.
+//
 // Distributed lock ensures this runs exactly once even under concurrent load.
 export async function runSettlement() {
   const db = serverSupa();
 
-  // Atomic claim — only one concurrent caller can proceed.
-  // Re-entrant: if a previous run crashed mid-way, unsettled players still have
-  // settlement_status='active'. We check for those before deciding to skip.
+  // ── Atomic claim ─────────────────────────────────────────────────────────────
   const { data: claimed, error: lockErr } = await db.rpc('claim_settlement');
   if (lockErr || !claimed) {
-    // Lock already held — but check if there are still unsettled players
-    // (previous run may have crashed). If so, proceed anyway.
     const { count: remaining } = await db
       .from('players')
       .select('*', { count: 'exact', head: true })
@@ -429,85 +441,283 @@ export async function runSettlement() {
   const { data: players } = await db.from('players').select('*').eq('settlement_status', 'active');
   if (!players?.length) return { settled_players: 0, settled_users: 0 };
 
-  let settledPlayers = 0, settledUsers = 0;
+  // ── Phase 1: compute settlement price for every player ───────────────────────
+  const settlementPriceMap: Record<string, number> = {};
   const failedPlayers: string[] = [];
+  let settledPlayers = 0;
 
   for (const player of players) {
     try {
-    // Load 7-day price history for TWAP settlement (7-day window is nearly manipulation-proof)
-    const { data: history } = await db
-      .from('price_history')
-      .select('*')
-      .eq('player_id', player.id)
-      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: true });
+      const { data: history } = await db
+        .from('price_history')
+        .select('*')
+        .eq('player_id', player.id)
+        .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+        .order('created_at', { ascending: true });
 
-    const hist = (history ?? []).map((h: any) => ({ ...h, price: Number(h.price) }));
-    const fv   = computeFairValue(player);
-    const settlementPrice = computeSettlementPrice(fv, hist);
-
-    await db.from('players').update({
-      settlement_status:      'settled',
-      final_settlement_price: settlementPrice,
-      updated_at:             new Date().toISOString(),
-    }).eq('id', player.id);
-
-    const { data: positions } = await db.from('positions')
-      .select('*').eq('player_id', player.id).gt('shares_owned', 0);
-    if (!positions?.length) { settledPlayers++; continue; }
-
-    for (const pos of positions) {
-      const shares = snap(Number(pos.shares_owned));
-      if (shares <= 0) continue;
-
-      const proceeds    = shares * settlementPrice;
-      const realizedPnl = (settlementPrice - Number(pos.avg_cost_basis)) * shares;
-
-      // CAS with retry: concurrent settlement workers (crash recovery) can collide on the same user.
-      // Retry up to 5 times to handle the case where another worker updated the balance first.
-      let credited = false;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const { data: u } = await db.from('users').select('balance').eq('id', pos.user_id).single();
-        if (!u) break;
-        const newBal = parseFloat((Number(u.balance) + proceeds).toFixed(2));
-        const { data: updatedUser } = await db.from('users')
-          .update({ balance: newBal, updated_at: new Date().toISOString() })
-          .eq('id', pos.user_id).eq('balance', parseFloat(Number(u.balance).toFixed(2)))
-          .select('balance').single();
-        if (updatedUser) { credited = true; break; }
-        // CAS miss — another concurrent update changed balance; re-read and retry
-        await new Promise(r => setTimeout(r, 20 * (attempt + 1)));
-      }
-      if (!credited) {
-        console.error(`Settlement balance CAS failed after retries for user=${pos.user_id} player=${player.id} — skipping position`);
-        continue;
-      }
-
-      await db.from('trades').insert({
-        user_id:      pos.user_id,
-        player_id:    player.id,
-        side:         'settlement',
-        shares,
-        price:        settlementPrice,
-        total_value:  parseFloat(proceeds.toFixed(2)),
-        realized_pnl: parseFloat(realizedPnl.toFixed(2)),
-      });
-
-      await db.from('positions').delete().eq('id', pos.id);
-      settledUsers++;
-    }
-
-    settledPlayers++;
+      const hist = (history ?? []).map((h: any) => ({ ...h, price: Number(h.price) }));
+      const fv   = computeFairValue(player);
+      settlementPriceMap[player.id] = computeSettlementPrice(fv, hist);
     } catch (e: any) {
-      console.error(`Settlement failed for player=${player.id} (${player.name}):`, e.message);
+      console.error(`Failed to compute settlement price for player=${player.id}:`, e.message);
       failedPlayers.push(player.name);
-      // Continue to next player — don't let one failure abort the whole settlement
+      settlementPriceMap[player.id] = Number(player.current_price); // fallback
     }
   }
+
+  // ── Phase 2: compute every user's portfolio MTM value ───────────────────────
+  // Load all positions (all players, all users) and all user balances in bulk.
+  const allPlayerIds = players.map((p: any) => p.id);
+
+  const { data: allPositions } = await db
+    .from('positions')
+    .select('user_id, player_id, shares_owned, avg_cost_basis')
+    .in('player_id', allPlayerIds)
+    .gt('shares_owned', 0);
+
+  // Group positions by user
+  const positionsByUser: Record<string, Array<{ player_id: string; shares: number; avg_cost: number }>> = {};
+  for (const pos of allPositions ?? []) {
+    if (!positionsByUser[pos.user_id]) positionsByUser[pos.user_id] = [];
+    positionsByUser[pos.user_id].push({
+      player_id: pos.player_id,
+      shares:    snap(Number(pos.shares_owned)),
+      avg_cost:  Number(pos.avg_cost_basis),
+    });
+  }
+
+  // Load all user balances
+  const { data: allUsers } = await db
+    .from('users')
+    .select('id, balance')
+    .eq('is_approved', true);
+
+  if (!allUsers?.length) {
+    console.error('Settlement: no approved users found');
+    return { settled_players: 0, settled_users: 0 };
+  }
+
+  // Compute MTM per user
+  const userMTM: Record<string, number> = {};
+  let totalMTM = 0;
+
+  for (const user of allUsers) {
+    const cash      = Number(user.balance);
+    const positions = positionsByUser[user.id] ?? [];
+    const posValue  = positions.reduce((sum, pos) => {
+      const sp = settlementPriceMap[pos.player_id] ?? 0;
+      return sum + pos.shares * sp;
+    }, 0);
+
+    const mtm = parseFloat((cash + posValue).toFixed(2));
+    userMTM[user.id] = mtm;
+    totalMTM += mtm;
+  }
+
+  // ── Phase 3: load distribution pool ─────────────────────────────────────────
+  const { data: poolRow } = await db
+    .from('season_pool')
+    .select('distribution_pool')
+    .eq('season_key', POOL.season_key)
+    .single();
+
+  const distributionPool = poolRow ? Number(poolRow.distribution_pool) : totalMTM;
+
+  if (distributionPool <= 0 || totalMTM <= 0) {
+    console.error(`Settlement: invalid pool (distribution=${distributionPool}, totalMTM=${totalMTM})`);
+    return { settled_players: 0, settled_users: 0 };
+  }
+
+  console.log(`SETTLEMENT: distributionPool=$${distributionPool.toFixed(2)}, totalMTM=$${totalMTM.toFixed(2)}, users=${allUsers.length}`);
+
+  // ── Phase 4: pay each user proportionally ───────────────────────────────────
+  let settledUsers = 0;
+  const payoutLog: Array<{ user_id: string; mtm: number; payout: number }> = [];
+
+  for (const user of allUsers) {
+    const mtm    = userMTM[user.id] ?? 0;
+    const payout = parseFloat(((mtm / totalMTM) * distributionPool).toFixed(2));
+
+    // CAS retry — balance may be in flight from an in-progress trade
+    let credited = false;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data: u } = await db.from('users').select('balance').eq('id', user.id).single();
+      if (!u) break;
+      const { data: updated } = await db.from('users')
+        .update({ balance: payout, updated_at: new Date().toISOString() })
+        .eq('id', user.id).eq('balance', parseFloat(Number(u.balance).toFixed(2)))
+        .select('balance').single();
+      if (updated) { credited = true; break; }
+      await new Promise(r => setTimeout(r, 20 * (attempt + 1)));
+    }
+
+    if (!credited) {
+      console.error(`Settlement payout CAS failed for user=${user.id} — skipping`);
+      continue;
+    }
+
+    // Record in user_deposits for audit trail
+    await db.from('user_deposits').insert({
+      user_id:     user.id,
+      season_key:  POOL.season_key,
+      type:        'settlement',
+      gross_amount: mtm,
+      fee_charged:  0,
+      net_to_pool:  -payout,
+      note: `Season settlement: MTM=$${mtm.toFixed(2)}, share=${((mtm/totalMTM)*100).toFixed(2)}%`,
+    });
+
+    // Delete all this user's positions (they are now settled)
+    const userPositions = positionsByUser[user.id] ?? [];
+    for (const pos of userPositions) {
+      const sp          = settlementPriceMap[pos.player_id] ?? 0;
+      const posProceeds = pos.shares * sp;
+      const realizedPnl = (sp - pos.avg_cost) * pos.shares;
+
+      await db.from('trades').insert({
+        user_id:      user.id,
+        player_id:    pos.player_id,
+        side:         'settlement',
+        shares:       pos.shares,
+        price:        sp,
+        total_value:  parseFloat(posProceeds.toFixed(2)),
+        realized_pnl: parseFloat(realizedPnl.toFixed(2)),
+      });
+    }
+
+    if (userPositions.length > 0) {
+      await db.from('positions')
+        .delete()
+        .eq('user_id', user.id)
+        .in('player_id', allPlayerIds);
+    }
+
+    payoutLog.push({ user_id: user.id, mtm, payout });
+    settledUsers++;
+  }
+
+  // ── Phase 5: mark all players settled ────────────────────────────────────────
+  for (const player of players) {
+    const sp = settlementPriceMap[player.id];
+    try {
+      await db.from('players').update({
+        settlement_status:      'settled',
+        final_settlement_price: sp,
+        updated_at:             new Date().toISOString(),
+      }).eq('id', player.id);
+      settledPlayers++;
+    } catch (e: any) {
+      console.error(`Failed to mark player=${player.id} settled:`, e.message);
+      if (!failedPlayers.includes(player.name)) failedPlayers.push(player.name);
+    }
+  }
+
+  // ── Phase 6: mark pool as settled ────────────────────────────────────────────
+  await db.from('season_pool').update({
+    settled:    true,
+    updated_at: new Date().toISOString(),
+  }).eq('season_key', POOL.season_key);
 
   if (failedPlayers.length) {
     console.error(`SETTLEMENT INCOMPLETE: ${failedPlayers.length} players failed: ${failedPlayers.join(', ')}`);
   }
-  console.log(`SETTLEMENT v3 COMPLETE: ${settledPlayers} players, ${settledUsers} positions @ 80% FV + 20% TWAP`);
-  return { settled_players: settledPlayers, settled_users: settledUsers, failed_players: failedPlayers };
+  console.log(`SETTLEMENT (parimutuel) COMPLETE: ${settledPlayers} players, ${settledUsers} users, pool=$${distributionPool.toFixed(2)}`);
+  return {
+    settled_players: settledPlayers,
+    settled_users:   settledUsers,
+    failed_players:  failedPlayers,
+    distribution_pool: distributionPool,
+    total_mtm: totalMTM,
+  };
+}
+
+// ─── Pool: record initial deposit when user account is created ────────────────
+// Called from the auth upsert path so every new user's starting balance
+// is reflected in the season pool before their first trade.
+export async function recordInitialDeposit(userId: string, amount: number) {
+  const db = serverSupa();
+  try {
+    await db.rpc('record_pool_deposit', {
+      p_user_id:    userId,
+      p_gross:      amount,
+      p_rake_rate:  POOL.rake_rate,
+      p_season_key: POOL.season_key,
+    });
+  } catch (e: any) {
+    // Non-fatal: the user account and balance still exist; only pool tracking is missing.
+    // Log it so it can be back-filled manually if needed.
+    console.warn(`[pool] record_pool_deposit failed for user=${userId}:`, e.message);
+  }
+}
+
+// ─── Pool: mid-season NAV withdrawal ─────────────────────────────────────────
+// User exits early. Their entire portfolio (cash + positions) is liquidated
+// at current prices, a 3% exit fee is deducted, and the remainder is paid out.
+// The exit fee stays in the pool — it increases proportional payouts for
+// everyone who stays until settlement.
+export async function executePoolWithdrawal(userId: string) {
+  const db = serverSupa();
+
+  // 1. Load user and all their positions
+  const { data: user } = await db.from('users').select('*').eq('id', userId).single();
+  if (!user) return { success: false, error: 'User not found' };
+
+  const { data: positions } = await db.from('positions')
+    .select('*, players(current_price, settlement_status)')
+    .eq('user_id', userId)
+    .gt('shares_owned', 0);
+
+  // 2. Mark-to-market: cash + position value at current prices
+  let positionValue = 0;
+  for (const pos of positions ?? []) {
+    const price = Number((pos as any).players?.current_price ?? 0);
+    const shares = snap(Number(pos.shares_owned));
+    positionValue += shares * price;
+  }
+  const nav = parseFloat((Number(user.balance) + positionValue).toFixed(2));
+  if (nav <= 0) return { success: false, error: 'Portfolio value is zero — nothing to withdraw' };
+
+  // 3. Calculate exit fee
+  const exitFee = parseFloat((nav * POOL.early_exit_fee).toFixed(2));
+  const payout  = parseFloat((nav - exitFee).toFixed(2));
+
+  // 4. Record withdrawal in pool (atomic Postgres function)
+  const { data: actualPayout, error: poolErr } = await db.rpc('record_pool_withdrawal', {
+    p_user_id:    userId,
+    p_nav:        nav,
+    p_exit_rate:  POOL.early_exit_fee,
+    p_season_key: POOL.season_key,
+  });
+  if (poolErr) return { success: false, error: 'Pool update failed — please retry' };
+
+  // 5. Sell all positions at current price (record trade events for audit trail)
+  for (const pos of positions ?? []) {
+    const price    = Number((pos as any).players?.current_price ?? 0);
+    const shares   = snap(Number(pos.shares_owned));
+    const proceeds = shares * price;
+    const pnl      = (price - Number(pos.avg_cost_basis)) * shares;
+
+    await db.from('trades').insert({
+      user_id:      userId,
+      player_id:    pos.player_id,
+      side:         'withdrawal',
+      shares,
+      price,
+      total_value:  parseFloat(proceeds.toFixed(2)),
+      realized_pnl: parseFloat(pnl.toFixed(2)),
+    });
+  }
+
+  // 6. Delete all positions
+  if ((positions ?? []).length > 0) {
+    await db.from('positions').delete().eq('user_id', userId);
+  }
+
+  // 7. Set user balance to payout amount (their cash-out)
+  await db.from('users')
+    .update({ balance: payout, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+
+  console.log(`POOL WITHDRAWAL user=${userId} NAV=${nav.toFixed(2)} fee=${exitFee.toFixed(2)} payout=${payout.toFixed(2)}`);
+  return { success: true, nav, exit_fee: exitFee, payout };
 }

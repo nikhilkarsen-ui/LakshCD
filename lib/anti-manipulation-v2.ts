@@ -121,7 +121,7 @@ export async function isWashTrading(
 
   const { data: trades } = await db
     .from('trades')
-    .select('side, total_value')
+    .select('side, total_value, shares')
     .eq('user_id', userId)
     .eq('player_id', playerId)
     .gte('created_at', windowStart)
@@ -129,14 +129,27 @@ export async function isWashTrading(
 
   if (!trades?.length) return false;
 
-  const totalBought = trades.filter((t: any) => t.side === 'buy').reduce((s: number, t: any) => s + Number(t.total_value), 0);
-  const totalSold   = trades.filter((t: any) => t.side === 'sell').reduce((s: number, t: any) => s + Number(t.total_value), 0);
+  const buyTrades  = trades.filter((t: any) => t.side === 'buy');
+  const sellTrades = trades.filter((t: any) => t.side === 'sell');
+
+  const totalBought      = buyTrades.reduce((s: number, t: any) => s + Number(t.total_value), 0);
+  const totalSold        = sellTrades.reduce((s: number, t: any) => s + Number(t.total_value), 0);
+  const sharesBought     = buyTrades.reduce((s: number, t: any) => s + Number(t.shares), 0);
+  const sharesSold       = sellTrades.reduce((s: number, t: any) => s + Number(t.shares), 0);
 
   const maxRT = Math.max(totalBought, totalSold);
   const minRT = Math.min(totalBought, totalSold);
 
   if (maxRT < C.wash_min_total) return false;
-  return (minRT / maxRT) > C.wash_roundtrip_threshold;
+
+  // Check both dollar value ratio AND share round-trip ratio.
+  // Dollar value alone can be gamed via slippage differential (buy high, sell lower
+  // at same share count — value ratio drops below threshold even though same shares moved).
+  const maxShares = Math.max(sharesBought, sharesSold);
+  const minShares = Math.min(sharesBought, sharesSold);
+  const shareRatio = maxShares > 0 ? minShares / maxShares : 0;
+
+  return (minRT / maxRT) > C.wash_roundtrip_threshold || shareRatio > C.wash_roundtrip_threshold;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -263,8 +276,10 @@ async function computeSybilAdjustedPenalty(
     const ratio   = Math.min(Math.abs(combined) / C.max_pressure_score, 1);
     const penalty = ratio * ratio * C.max_fill_penalty;
     return 1 + penalty;
-  } catch {
-    // If RPC unavailable (migration not run yet), fall back to own pressure only
+  } catch (e) {
+    // If RPC unavailable (migration not run yet), fall back to own pressure only.
+    // This means sybil coordination via shared IPs goes undetected — log prominently.
+    console.warn('[anti-manip] get_ip_shared_pressure RPC failed — sybil detection disabled:', (e as Error).message);
     const isBuying = side === 'buy';
     const sameDir  = (isBuying && ownPressure > 0) || (!isBuying && ownPressure < 0);
     if (!sameDir) return 1.0;

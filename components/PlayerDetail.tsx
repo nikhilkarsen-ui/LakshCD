@@ -463,7 +463,7 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
         <Card>
           <Label>Trade</Label>
           <p className="text-[11px] text-lk-dim mb-3">
-            Enter dollar amount. Unsold shares settle at the final price on {settlementDate}.
+            Enter dollar amount. Shares held at season end count toward your pool payout — the higher your portfolio value, the larger your slice.
           </p>
           <div className="relative mb-3">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lk-dim text-sm">$</span>
@@ -517,6 +517,11 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
                     <span>Price per share</span>
                     <span>${preview.costPerShare?.toFixed(2)} <span className="text-lk-dim/60">(mkt ${preview.marketPrice?.toFixed(2)})</span></span>
                   </div>
+                  {preview.fillPenaltyWarning && (
+                    <div className="text-yellow-500 pt-1 text-[10px]">
+                      ⚠ High recent activity — actual shares received may be slightly fewer
+                    </div>
+                  )}
                 </>
               )}
               {!previewLoading && preview?.blocked && (
@@ -548,11 +553,11 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
         </Card>
       ) : (
         <Card>
-          <Label>Settlement</Label>
+          <Label>Settled</Label>
           <p className="text-sm text-lk-dim">
-            This player settled at{' '}
+            This player's final value was set at{' '}
             <span className="text-lk-text font-semibold">${(player.final_settlement_price || 0).toFixed(2)}</span>.
-            All shares were converted to cash at the final settlement price.
+            All share positions were counted toward portfolio values for the final pool distribution.
           </p>
         </Card>
       )}

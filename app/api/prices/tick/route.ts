@@ -223,9 +223,13 @@ export async function POST(req: NextRequest) {
 
     if (inserts.length) await db.from('price_history').insert(inserts);
 
-    // ── Prune history older than 7 days ───────────────────────────────────
-    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    await db.from('price_history').delete().lt('created_at', cutoff);
+    // ── Prune history older than 7 days (probabilistic — ~1% of ticks) ──────
+    // Running a DELETE on every 5s tick is wasteful. At 1% probability this
+    // fires roughly once every 500 ticks (~8 minutes), which is plenty.
+    if (Math.random() < 0.01) {
+      const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      await db.from('price_history').delete().lt('created_at', cutoff);
+    }
 
     return NextResponse.json({ success: true, ticks: players.length, timestamp: now });
   } catch (e: any) {

@@ -20,50 +20,50 @@ const SETTLEMENT_DATE = '2026-06-15T00:00:00Z';
 const HOW_IT_WORKS = [
   {
     step: '1',
-    title: 'Browse the market',
-    desc: 'Every NBA player has a live share price — the market\'s current estimate of their final season value.',
+    title: 'Join the pool',
+    desc: 'Every participant starts with $10,000. That money enters a shared season pool — the total prize pot that gets paid out at the end.',
   },
   {
     step: '2',
-    title: 'Buy shares',
-    desc: 'Spend virtual cash to buy shares in a player. Price moves up with every buy.',
+    title: 'Trade player shares',
+    desc: 'Buy and sell NBA player shares. Prices move with every trade and drift toward each player\'s stat-based expected value.',
   },
   {
     step: '3',
-    title: 'Sell anytime',
-    desc: 'Sell any shares you own back to the market. Price moves down with every sell. You can only sell what you own.',
+    title: 'Build a winning portfolio',
+    desc: 'The better your portfolio performs relative to everyone else, the larger your share of the final payout.',
   },
   {
     step: '4',
-    title: 'Settle at season end',
-    desc: 'On June 15, 2026, all remaining shares are automatically converted to cash at each player\'s final settlement price.',
+    title: 'Get paid at season end',
+    desc: 'On June 15, 2026, the pool is distributed proportionally. Top performers take home more than they put in.',
   },
 ];
 
 const FEATURES = [
   {
     title: 'Live share prices',
-    desc: 'Every player has a real-time price that updates every 5 seconds, driven by trading activity and season performance.',
+    desc: 'Every player has a real-time price that updates every 5 seconds, driven by trading activity and live game stats.',
   },
   {
-    title: 'Buy & sell freely',
-    desc: 'Buy shares in any player. Sell back any shares you own. No restrictions beyond what you can afford.',
+    title: 'Fixed prize pool',
+    desc: 'All deposits go into one pool. The platform takes a 5% rake upfront — the rest is yours to compete for. No money is created from thin air.',
   },
   {
-    title: 'Season settlement',
-    desc: 'The season ends June 15, 2026. All remaining shares settle automatically at the final price — no action needed.',
+    title: 'Proportional payout',
+    desc: 'At season end, the pool is split based on portfolio value. Outperform the field and you take home more than you started with.',
   },
   {
     title: 'Stat-driven prices',
-    desc: 'Prices drift toward each player\'s expected final value, which updates as the season stats come in.',
+    desc: 'Prices drift toward each player\'s stat-based expected value. Points, assists, and rebounds all factor in — live.',
   },
   {
-    title: 'Track your P&L',
-    desc: 'See unrealized gains on shares you hold, and realized gains locked in from past sells.',
+    title: 'Exit anytime',
+    desc: 'Need to cash out early? Withdraw at your current portfolio value minus a 3% early exit fee. The fee stays in the pool for everyone else.',
   },
   {
     title: 'Leaderboard',
-    desc: 'Compete against other traders. Rankings are based on total portfolio return since the season started.',
+    desc: 'Rankings are based on total portfolio return. The top of the board at settlement takes the biggest slice of the pool.',
   },
 ];
 
@@ -176,13 +176,13 @@ function LandingPage({ onStart }: { onStart: () => void }) {
                 </h1>
 
                 <p className="text-lg leading-8 text-lk-dim">
-                  Each NBA player has a share price — the market's live estimate of their final season value.
-                  Buy shares you believe in. Sell when you're ready. Everything settles automatically at season end.
+                  A shared prize pool. NBA player shares. One season to outperform everyone else.
+                  Trade player shares, build the strongest portfolio, and claim your proportional payout when the season ends June 15.
                 </p>
 
                 <div id="waitlist" className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 max-w-md">
                   <p className="text-xs uppercase tracking-[0.4em] text-lk-accent mb-2">Beta access</p>
-                  <p className="text-sm text-lk-dim mb-4">Drop your email and we'll let you in when spots open. Everyone starts with $10,000 in virtual cash.</p>
+                  <p className="text-sm text-lk-dim mb-4">Drop your email and we'll let you in when spots open. Everyone starts with $10,000 in the prize pool.</p>
                   <WaitlistForm />
                 </div>
 
@@ -245,7 +245,7 @@ function LandingPage({ onStart }: { onStart: () => void }) {
                   </div>
 
                   <div className="text-[11px] text-lk-muted text-center">
-                    Expected final value: <span className="text-lk-accent font-medium">$238.50</span> · Settles Jun 15, 2026
+                    Expected final value: <span className="text-lk-accent font-medium">$238.50</span> · Pool pays out Jun 15, 2026
                   </div>
                 </div>
               </div>
@@ -269,19 +269,18 @@ function LandingPage({ onStart }: { onStart: () => void }) {
             </div>
           </section>
 
-          {/* ── Settlement callout ── */}
+          {/* ── Pool payout callout ── */}
           <Reveal className="my-4">
             <div className="rounded-[2rem] border border-emerald-500/20 bg-emerald-500/[0.04] p-10 grid gap-8 md:grid-cols-[1fr_auto] items-center">
               <div>
-                <p className="text-xs uppercase tracking-[0.4em] text-emerald-400 mb-3">Season settlement</p>
-                <h3 className="text-2xl font-bold mb-3">Everything settles on June 15, 2026.</h3>
+                <p className="text-xs uppercase tracking-[0.4em] text-emerald-400 mb-3">How the payout works</p>
+                <h3 className="text-2xl font-bold mb-3">One pool. Distributed proportionally on June 15.</h3>
                 <p className="text-sm leading-7 text-lk-dim max-w-lg">
-                  At season end, all remaining share holdings are automatically converted to cash at each player's final settlement price.
-                  You don't need to do anything — just hold through settlement if you believe in a player.
+                  Every participant's $10k goes into a shared prize pool. The platform takes a 5% rake upfront — the remaining 95% is the prize. At season end, each player receives a share of that pool proportional to how their portfolio performed versus the field. Outperform, and you walk away with more than you put in. No fake settlement math — the pool is fixed.
                 </p>
               </div>
               <div className="text-center min-w-[160px]">
-                <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-2">Countdown</div>
+                <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-2">Payout in</div>
                 <div className="font-mono text-xl font-bold text-emerald-300">{countdown}</div>
               </div>
             </div>
@@ -308,9 +307,9 @@ function LandingPage({ onStart }: { onStart: () => void }) {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 { label: 'Players', value: '15' },
-                { label: 'Starting Cash', value: '$10,000' },
-                { label: 'Price Updates', value: 'Every 5s' },
-                { label: 'Settlement', value: 'Jun 15 \'26' },
+                { label: 'Pool Entry', value: '$10,000' },
+                { label: 'Platform Rake', value: '5%' },
+                { label: 'Payout Date', value: 'Jun 15 \'26' },
               ].map(s => (
                 <div key={s.label} className="rounded-2xl border border-white/8 bg-white/[0.03] p-5 text-center">
                   <div className="text-[10px] uppercase tracking-widest text-lk-dim mb-2">{s.label}</div>
@@ -323,7 +322,7 @@ function LandingPage({ onStart }: { onStart: () => void }) {
           {/* ── CTA ── */}
           <section className="py-20 border-t border-white/5 text-center">
             <h2 className="text-4xl font-black mb-4">Already have access?</h2>
-            <p className="text-lk-dim text-sm mb-8">Sign in and start trading player shares. Settlement is June 15, 2026.</p>
+            <p className="text-lk-dim text-sm mb-8">Sign in and start building your portfolio. The pool pays out June 15, 2026.</p>
             <button onClick={onStart} className="landing-glow-btn inline-flex rounded-full bg-lk-accent px-10 py-4 text-sm font-semibold text-black transition hover:brightness-110">
               Sign In
             </button>
@@ -331,7 +330,7 @@ function LandingPage({ onStart }: { onStart: () => void }) {
         </main>
 
         <footer className="border-t border-white/8 py-8 text-center text-xs text-lk-muted">
-          Simulated trading for entertainment purposes only. All cash is virtual. Not financial advice.
+          Simulated trading for entertainment purposes only. All cash and pool balances are virtual. Not financial advice.
         </footer>
       </div>
     </div>
