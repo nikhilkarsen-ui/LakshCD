@@ -585,7 +585,7 @@
     <h2>Business Model</h2>
     <h3>Simple, transparent revenue</h3>
     <p>
-      Laksh earns revenue from two sources, both fully disclosed to users before they enter:
+      Laksh earns revenue from three sources, all fully disclosed to users before they enter:
     </p>
     <table>
       <thead>
@@ -602,12 +602,23 @@
           <td>At the time of entry — deducted from prize pool</td>
         </tr>
         <tr>
+          <td>Transaction fee</td>
+          <td>0.2% base, up to 5% cap</td>
+          <td>On every buy and sell — deducted from the trade amount</td>
+        </tr>
+        <tr>
           <td>Early exit fee</td>
           <td>3% of portfolio value</td>
           <td>When a user withdraws before season end — added back to prize pool</td>
         </tr>
       </tbody>
     </table>
+    <p>
+      The transaction fee is dynamic: it starts at a 0.2% base and scales upward when a player's
+      price is far from its model fair value or when volatility is elevated — discouraging speculative
+      runs and rewarding trades that move prices toward fair value. The fee is capped at 5% per trade.
+      Users see the exact fee amount before confirming any trade.
+    </p>
     <p>
       Note: the early exit fee is redistributed to remaining participants rather than retained as
       platform revenue in the current model — it functions as a retention incentive. Future versions
