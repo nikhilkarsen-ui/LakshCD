@@ -22,10 +22,12 @@ const K           = 5_000_000;
 const TOTAL_GAMES = 82;
 const pts_w = 0.35, ast_w = 0.20, reb_w = 0.20, eff_w = 0.25;
 const max_pts = 2800, max_ast = 900, max_reb = 1200, max_eff = 3000;
-const fv_scale  = 0.40;
-const min_price = 5;
+const fv_scale   = 0.40;
+const min_price  = 5;
 const LEAGUE_AVG = 0.45;
 const CRED_GAMES = 20;
+const MIN_MPG    = 10;   // minimum minutes to be considered a rotation player
+const MIN_GAMES  = 3;    // minimum games in our sample to trust the data
 
 const BDL_BASE = 'https://api.balldontlie.io/v1';
 
@@ -41,7 +43,7 @@ async function bdlGet(path: string, attempt = 0): Promise<any> {
     cache: 'no-store',
   });
   if (res.status === 429 && attempt === 0) {
-    await new Promise(r => setTimeout(r, 12_000)); // wait 12s then retry
+    await new Promise(r => setTimeout(r, 12_000));
     return bdlGet(path, 1);
   }
   if (!res.ok) return null;
@@ -56,16 +58,6 @@ function parseMinutes(min: string | number | null | undefined): number {
     return (m || 0) + (sec || 0) / 60;
   }
   return parseFloat(s) || 0;
-}
-
-function computeEfficiency(s: any): number {
-  const n = (v: any) => Number(v || 0);
-  return (
-    n(s.pts) + n(s.reb) + n(s.ast) + n(s.stl) + n(s.blk)
-    - (n(s.fga) - n(s.fgm))
-    - (n(s.fta) - n(s.ftm))
-    - n(s.turnover)
-  );
 }
 
 function computePrice(ppg: number, apg: number, rpg: number, eff: number, gp: number) {
@@ -88,6 +80,20 @@ function computePools(price: number) {
   };
 }
 
+function countQualifiedPerTeam(
+  allAgg: Map<number, any>,
+  teamNames: string[],
+): Map<string, number> {
+  const counts = new Map<string, number>(teamNames.map(n => [n, 0]));
+  for (const agg of allAgg.values()) {
+    const mpg = agg.gamesInSample > 0 ? agg.sumMin / agg.gamesInSample : 0;
+    if (mpg >= MIN_MPG && agg.gamesInSample >= MIN_GAMES) {
+      counts.set(agg.teamName, (counts.get(agg.teamName) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 export async function POST(req: NextRequest) {
   const secret = req.headers.get('x-cron-secret') || req.headers.get('x-admin-secret');
   if (!secret || secret !== process.env.CRON_SECRET) {
@@ -105,7 +111,7 @@ export async function POST(req: NextRequest) {
     const teamsJson = await bdlGet('/teams?per_page=100');
     if (!teamsJson?.data) throw new Error('Failed to fetch BDL teams');
 
-    const bdlTeamMap = new Map<string, number>();
+    const bdlTeamMap = new Map<string, number>(); // full_name → bdl_team_id
     for (const t of teamsJson.data) bdlTeamMap.set(t.full_name, t.id);
 
     const resolvedTeams: Array<{ name: string; bdlId: number }> = [];
@@ -116,16 +122,20 @@ export async function POST(req: NextRequest) {
     }
     log(`Resolved ${resolvedTeams.length}/${TARGET_TEAMS.length} teams`);
 
-    // ── Step 2: Pull game stats per team, aggregate into per-player averages ──
-    //
-    // One /stats?seasons[]=2025&team_ids[]=X call per team (12 requests total).
-    // Each row is a single player's stats in a single game.
-    // We aggregate across all rows per player to get mpg/ppg/rpg/apg.
-    // This avoids 150+ sequential /season_averages calls that exceed the timeout.
-    //
-    // per_page=100 covers ~6–7 games × ~15 players = the full active rotation.
+    const targetTeamIds  = new Set(resolvedTeams.map(t => t.bdlId));
+    const teamIdToName   = new Map(resolvedTeams.map(t => [t.bdlId, t.name]));
+    const resolvedNames  = resolvedTeams.map(t => t.name);
 
-    log('Fetching 2025 game stats per team (12 requests)...');
+    // ── Step 2: Paginate global 2025 stats, bucket by team ────────────────────
+    //
+    // /stats?seasons[]=2025 returns all game stat rows sorted most-recent-first.
+    // team_ids[] is ignored on this tier — we filter by row.team.id ourselves.
+    // We paginate until every target team has ≥9 players with mpg≥10 in sample,
+    // or we hit MAX_PAGES (safety cap).
+    //
+    // Each page = 100 rows ≈ 4 games. At 800ms/page, 20 pages ≤ 16 seconds.
+
+    log('Paginating 2025 game stats to collect per-player data for all 12 teams...');
 
     type PlayerAgg = {
       bdlId: number; name: string; position: string; teamName: string;
@@ -135,45 +145,44 @@ export async function POST(req: NextRequest) {
       sumFta: number; sumFtm: number; sumTov: number;
     };
 
-    const allAgg = new Map<number, PlayerAgg>(); // bdlId → aggregated row
-    const playerTeam = new Map<number, string>(); // bdlId → teamName
+    const allAgg = new Map<number, PlayerAgg>();
+    let cursor: number | null = null;
+    let page = 0;
+    const MAX_PAGES = 30; // 30 pages × 100 rows = 3,000 stat rows ≈ 2–3 months of games
 
-    for (const team of resolvedTeams) {
-      await new Promise(r => setTimeout(r, 500)); // light delay between team requests
-      const json = await bdlGet(`/stats?seasons[]=2025&team_ids[]=${team.bdlId}&per_page=100`);
-      const rows: any[] = json?.data ?? [];
-      log(`  ${team.name}: ${rows.length} game stat rows`);
+    do {
+      await new Promise(r => setTimeout(r, 800));
+      const cursorParam = cursor ? `&cursor=${cursor}` : '';
+      const json = await bdlGet(`/stats?seasons[]=2025&per_page=100${cursorParam}`);
+      if (!json?.data || json.data.length === 0) { log('  Stats feed exhausted'); break; }
 
-      for (const row of rows) {
-        const pid = row?.player?.id;
-        if (pid == null) continue;
-        const id = Number(pid);
+      let rowsMatchingTargets = 0;
+      for (const row of json.data as any[]) {
+        const rowTeamId = Number(row?.team?.id);
+        if (!rowTeamId || !targetTeamIds.has(rowTeamId)) continue;
 
-        // CRITICAL: only count rows where this player was on the queried team.
-        // The /stats endpoint returns both teams' players for every game — we must
-        // filter out opposing team players or everyone gets assigned to Detroit.
-        const rowTeamId = row?.team?.id;
-        if (rowTeamId != null && Number(rowTeamId) !== team.bdlId) continue;
-
-        // Only count rows where this player actually played (min > 0)
         const min = parseMinutes(row.min);
-        if (min === 0) continue;
+        if (min === 0) continue; // DNP / no minutes
 
-        if (!allAgg.has(id)) {
-          allAgg.set(id, {
-            bdlId: id,
-            name:     `${row.player.first_name || ''} ${row.player.last_name || ''}`.trim(),
-            position: row.player.position || 'F',
-            teamName: team.name,
+        const pid = Number(row?.player?.id);
+        if (!pid) continue;
+
+        const teamName = teamIdToName.get(rowTeamId)!;
+
+        if (!allAgg.has(pid)) {
+          allAgg.set(pid, {
+            bdlId: pid,
+            name:     `${row.player?.first_name || ''} ${row.player?.last_name || ''}`.trim(),
+            position: row.player?.position || 'F',
+            teamName,
             gamesInSample: 0,
             sumMin: 0, sumPts: 0, sumAst: 0, sumReb: 0,
             sumStl: 0, sumBlk: 0, sumFga: 0, sumFgm: 0,
             sumFta: 0, sumFtm: 0, sumTov: 0,
           });
-          playerTeam.set(id, team.name);
         }
 
-        const agg = allAgg.get(id)!;
+        const agg = allAgg.get(pid)!;
         agg.gamesInSample++;
         agg.sumMin  += min;
         agg.sumPts  += Number(row.pts      || 0);
@@ -186,13 +195,28 @@ export async function POST(req: NextRequest) {
         agg.sumFta  += Number(row.fta      || 0);
         agg.sumFtm  += Number(row.ftm      || 0);
         agg.sumTov  += Number(row.turnover || 0);
+        rowsMatchingTargets++;
       }
-    }
 
-    log(`Aggregated stats for ${allAgg.size} unique players across all teams`);
+      page++;
+      cursor = json.meta?.next_cursor ?? null;
 
-    // ── Step 3: Compute per-game averages, filter, select top 9 per team ──────
-    log('Computing averages and selecting top 9 per team...');
+      // Check if every target team has ≥9 qualified players yet
+      const qCounts = countQualifiedPerTeam(allAgg, resolvedNames);
+      const ready   = resolvedNames.filter(n => (qCounts.get(n) ?? 0) >= 9).length;
+      log(`  Page ${page}: +${rowsMatchingTargets} rows → ${allAgg.size} unique players. Teams ready: ${ready}/${resolvedNames.length}`);
+
+      if (ready === resolvedNames.length) {
+        log('All teams have ≥9 qualified players — stopping pagination.');
+        break;
+      }
+
+    } while (cursor && page < MAX_PAGES);
+
+    log(`Pagination complete. ${allAgg.size} unique players across target teams.`);
+
+    // ── Step 3: Compute averages, filter, select top 9 per team ──────────────
+    log('Selecting top 9 per team by minutes per game...');
 
     type PlayerEntry = {
       bdlPlayerId: number; name: string; position: string; teamName: string;
@@ -202,24 +226,23 @@ export async function POST(req: NextRequest) {
     const byTeam = new Map<string, PlayerEntry[]>();
     for (const team of resolvedTeams) byTeam.set(team.name, []);
 
-    for (const [, agg] of allAgg) {
+    for (const agg of allAgg.values()) {
       const g = agg.gamesInSample;
-      if (g === 0) continue;
+      if (g < MIN_GAMES) continue;
 
       const mpg = agg.sumMin / g;
-      if (mpg < 10) continue; // exclude garbage time / DNP players
+      if (mpg < MIN_MPG) continue;
 
       const ppg = parseFloat((agg.sumPts / g).toFixed(1));
       const apg = parseFloat((agg.sumAst / g).toFixed(1));
       const rpg = parseFloat((agg.sumReb / g).toFixed(1));
-      const effPerGame = (agg.sumPts + agg.sumReb + agg.sumAst + agg.sumStl + agg.sumBlk
-        - (agg.sumFga - agg.sumFgm) - (agg.sumFta - agg.sumFtm) - agg.sumTov) / g;
-      const eff = parseFloat(effPerGame.toFixed(1));
+      const effTotal = agg.sumPts + agg.sumReb + agg.sumAst + agg.sumStl + agg.sumBlk
+        - (agg.sumFga - agg.sumFgm) - (agg.sumFta - agg.sumFtm) - agg.sumTov;
+      const eff = parseFloat((effTotal / g).toFixed(1));
 
       byTeam.get(agg.teamName)?.push({
         bdlPlayerId: agg.bdlId, name: agg.name, position: agg.position,
-        teamName: agg.teamName, mpg, ppg, apg, rpg, eff,
-        gp: g, // gamesInSample used as proxy — good enough for Bayesian credibility
+        teamName: agg.teamName, mpg, ppg, apg, rpg, eff, gp: g,
       });
     }
 
@@ -231,18 +254,18 @@ export async function POST(req: NextRequest) {
       const top9 = players.slice(0, 9);
       finalPlayers.push(...top9);
       teamBreakdown[teamName] = top9.map(p => `${p.name} (${p.mpg.toFixed(1)}mpg, ${p.ppg}ppg)`);
-      log(`  ${teamName} [${top9.length}/${players.length} qualified]: ${top9.map(p => p.name).join(', ')}`);
+      log(`  ${teamName} [${top9.length}/${players.length} q]: ${top9.map(p => p.name).join(', ')}`);
     }
 
     const underTeams = [...byTeam.entries()].filter(([, p]) => p.length < 9);
     if (underTeams.length > 0) {
       log('WARNING: Teams with fewer than 9 qualified players:');
-      for (const [t, p] of underTeams) log(`  ${t}: only ${p.length} players met the mpg≥10 threshold`);
+      for (const [t, p] of underTeams) log(`  ${t}: ${p.length} — may need more pages`);
     }
     log(`Total players selected: ${finalPlayers.length}`);
 
     if (finalPlayers.length === 0) {
-      throw new Error('No players selected — check BDL API key and whether season 2025 has game data.');
+      throw new Error('No players selected — check BDL API key and season 2025 game data.');
     }
 
     // ── Step 4: Delete all existing players ──────────────────────────────────
