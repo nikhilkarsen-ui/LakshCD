@@ -149,6 +149,12 @@ export async function POST(req: NextRequest) {
         if (pid == null) continue;
         const id = Number(pid);
 
+        // CRITICAL: only count rows where this player was on the queried team.
+        // The /stats endpoint returns both teams' players for every game — we must
+        // filter out opposing team players or everyone gets assigned to Detroit.
+        const rowTeamId = row?.team?.id;
+        if (rowTeamId != null && Number(rowTeamId) !== team.bdlId) continue;
+
         // Only count rows where this player actually played (min > 0)
         const min = parseMinutes(row.min);
         if (min === 0) continue;
