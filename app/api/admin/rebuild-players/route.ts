@@ -40,7 +40,8 @@ const FORCED_ADDITIONS: Record<string, Array<{
   mpg: number; ppg: number; apg: number; rpg: number;
   stl: number; blk: number; fga: number; fgm: number;
   fta: number; ftm: number; tov: number; gp: number;
-  searchName: string; // last name (or "First Last") passed to /players?search=
+  searchName: string; // last name passed to /players?search=
+  bdlId?: number;     // hardcode when search is ambiguous (e.g. common last names)
 }>> = {
   'Boston Celtics': [
     // Tatum: force-inject because he missed much of 2025-26 (Achilles, returned Mar 2026) —
@@ -56,7 +57,7 @@ const FORCED_ADDITIONS: Record<string, Array<{
     { name: 'Jamal Murray',        position: 'PG', mpg: 35.4, ppg: 25.4, apg:  5.9, rpg:  4.4, stl: 1.0, blk: 0.3, fga: 17.5, fgm:  9.0, fta: 4.6, ftm: 4.0, tov: 2.5, gp: 75, searchName: 'Murray'       },
     { name: 'Aaron Gordon',        position: 'PF', mpg: 31.4, ppg: 16.2, apg:  3.7, rpg:  6.8, stl: 1.0, blk: 0.7, fga: 11.0, fgm:  6.0, fta: 3.0, ftm: 2.3, tov: 1.7, gp: 72, searchName: 'Gordon'       },
     { name: 'Christian Braun',     position: 'SG', mpg: 30.5, ppg: 15.4, apg:  2.5, rpg:  4.0, stl: 0.9, blk: 0.4, fga: 10.2, fgm:  4.9, fta: 2.5, ftm: 2.0, tov: 1.0, gp: 71, searchName: 'Braun'        },
-    { name: 'Cameron Johnson',     position: 'SF', mpg: 31.0, ppg: 14.5, apg:  2.2, rpg:  4.2, stl: 0.8, blk: 0.3, fga: 11.5, fgm:  5.3, fta: 2.2, ftm: 1.8, tov: 1.1, gp: 68, searchName: 'Johnson' },
+    { name: 'Cameron Johnson',     position: 'SF', mpg: 31.0, ppg: 14.5, apg:  2.2, rpg:  4.2, stl: 0.8, blk: 0.3, fga: 11.5, fgm:  5.3, fta: 2.2, ftm: 1.8, tov: 1.1, gp: 68, searchName: 'Cameron', bdlId: 666679 },
     { name: 'Tim Hardaway Jr.',    position: 'SG', mpg: 28.0, ppg: 13.5, apg:  2.0, rpg:  3.0, stl: 0.7, blk: 0.2, fga: 11.0, fgm:  5.0, fta: 2.0, ftm: 1.7, tov: 1.0, gp: 65, searchName: 'Hardaway'      },
     { name: 'Peyton Watson',       position: 'SF', mpg: 20.8, ppg:  7.6, apg:  1.2, rpg:  3.9, stl: 0.8, blk: 0.7, fga:  6.2, fgm:  2.9, fta: 1.4, ftm: 1.0, tov: 0.8, gp: 65, searchName: 'Watson'        },
     { name: 'Jonas Valanciunas',   position: 'C',  mpg: 22.0, ppg: 10.2, apg:  1.5, rpg:  8.0, stl: 0.5, blk: 0.7, fga:  8.0, fgm:  4.2, fta: 2.5, ftm: 2.0, tov: 1.3, gp: 60, searchName: 'Valanciunas'   },
@@ -349,23 +350,26 @@ export async function POST(req: NextRequest) {
         const nameExists = [...allAgg.values()].some(a => a.teamName === teamName && a.name === h.name);
         if (nameExists) continue;
 
-        // Search BDL by name to get the real player ID for live price tracking
-        await new Promise(r => setTimeout(r, 800));
-        const searchJson = await bdlGet(`/players?search=${encodeURIComponent(h.searchName)}&per_page=25`);
-        const results: any[] = searchJson?.data ?? [];
-        // Priority 1: exact full-name match (handles common last names like Johnson)
-        // Priority 2: one name contains the other (handles Jr./accents/short names)
-        // Priority 3: last-name-only match (last resort — may be ambiguous)
-        const match = results.find(p => `${p.first_name} ${p.last_name}`.toLowerCase() === h.name.toLowerCase())
-          ?? results.find((p: any) =>
-          (() => {
-            const full = `${p.first_name} ${p.last_name}`.toLowerCase();
-            const target = h.name.toLowerCase();
-            return full.includes(target) || target.includes(full) ||
-              p.last_name.toLowerCase() === h.name.split(' ').pop()!.toLowerCase().replace('.','');
-          })()
-        );
-        const realId = match ? Number(match.id) : null;
+        // Use hardcoded bdlId if provided (avoids ambiguous searches for common names)
+        let realId: number | null = h.bdlId ?? null;
+        if (!realId) {
+          await new Promise(r => setTimeout(r, 800));
+          const searchJson = await bdlGet(`/players?search=${encodeURIComponent(h.searchName)}&per_page=25`);
+          const results: any[] = searchJson?.data ?? [];
+          // Priority 1: exact full-name match
+          // Priority 2: one name contains the other (handles Jr./accents)
+          // Priority 3: last-name-only (last resort)
+          const match = results.find(p => `${p.first_name} ${p.last_name}`.toLowerCase() === h.name.toLowerCase())
+            ?? results.find((p: any) =>
+            (() => {
+              const full = `${p.first_name} ${p.last_name}`.toLowerCase();
+              const target = h.name.toLowerCase();
+              return full.includes(target) || target.includes(full) ||
+                p.last_name.toLowerCase() === h.name.split(' ').pop()!.toLowerCase().replace('.','');
+            })()
+          );
+          realId = match ? Number(match.id) : null;
+        }
 
         let syntheticId = -Date.now(); // guaranteed unique fallback
         const bdlId = realId ?? syntheticId;
