@@ -48,13 +48,13 @@ const FORCED_ADDITIONS: Record<string, Array<{
   ],
   'Denver Nuggets': [
     { name: 'Nikola Jokic',             position: 'C',  mpg: 34.9, ppg: 29.6, apg: 10.2, rpg: 13.0, stl: 1.4, blk: 1.0, fga: 17.4, fgm: 11.3, fta: 6.2, ftm: 5.2, tov: 3.7, gp: 79, searchName: 'Jokic'      },
-    { name: 'Jamal Murray',             position: 'PG', mpg: 34.1, ppg: 22.0, apg:  5.9, rpg:  4.4, stl: 1.0, blk: 0.3, fga: 16.9, fgm:  8.5, fta: 4.6, ftm: 4.0, tov: 2.5, gp: 60, searchName: 'Jamal Murray' },
-    { name: 'Michael Porter Jr.',       position: 'SF', mpg: 32.8, ppg: 17.0, apg:  1.7, rpg:  7.0, stl: 0.7, blk: 0.6, fga: 12.5, fgm:  6.4, fta: 2.5, ftm: 2.1, tov: 1.2, gp: 58, searchName: 'Michael Porter' },
-    { name: 'Aaron Gordon',             position: 'PF', mpg: 31.4, ppg: 14.2, apg:  3.7, rpg:  6.8, stl: 1.0, blk: 0.7, fga: 10.5, fgm:  5.7, fta: 3.0, ftm: 2.3, tov: 1.7, gp: 72, searchName: 'Aaron Gordon'  },
+    { name: 'Jamal Murray',             position: 'PG', mpg: 34.1, ppg: 22.0, apg:  5.9, rpg:  4.4, stl: 1.0, blk: 0.3, fga: 16.9, fgm:  8.5, fta: 4.6, ftm: 4.0, tov: 2.5, gp: 60, searchName: 'Murray'        },
+    { name: 'Michael Porter Jr.',       position: 'SF', mpg: 32.8, ppg: 17.0, apg:  1.7, rpg:  7.0, stl: 0.7, blk: 0.6, fga: 12.5, fgm:  6.4, fta: 2.5, ftm: 2.1, tov: 1.2, gp: 58, searchName: 'Porter'         },
+    { name: 'Aaron Gordon',             position: 'PF', mpg: 31.4, ppg: 14.2, apg:  3.7, rpg:  6.8, stl: 1.0, blk: 0.7, fga: 10.5, fgm:  5.7, fta: 3.0, ftm: 2.3, tov: 1.7, gp: 72, searchName: 'Gordon'         },
     { name: 'Kentavious Caldwell-Pope', position: 'SG', mpg: 29.6, ppg: 12.8, apg:  2.3, rpg:  3.3, stl: 1.1, blk: 0.3, fga: 10.0, fgm:  4.8, fta: 1.8, ftm: 1.5, tov: 1.1, gp: 70, searchName: 'Caldwell-Pope' },
     { name: 'Russell Westbrook',        position: 'PG', mpg: 26.0, ppg: 11.0, apg:  5.2, rpg:  5.0, stl: 1.2, blk: 0.3, fga: 10.8, fgm:  4.5, fta: 3.5, ftm: 2.6, tov: 2.8, gp: 55, searchName: 'Westbrook'    },
-    { name: 'Christian Braun',          position: 'SG', mpg: 24.5, ppg:  9.4, apg:  2.0, rpg:  3.8, stl: 0.9, blk: 0.4, fga:  7.8, fgm:  3.8, fta: 1.9, ftm: 1.5, tov: 1.0, gp: 71, searchName: 'Christian Braun' },
-    { name: 'Peyton Watson',            position: 'SF', mpg: 20.8, ppg:  7.6, apg:  1.2, rpg:  3.9, stl: 0.8, blk: 0.7, fga:  6.2, fgm:  2.9, fta: 1.4, ftm: 1.0, tov: 0.8, gp: 65, searchName: 'Peyton Watson'  },
+    { name: 'Christian Braun',          position: 'SG', mpg: 24.5, ppg:  9.4, apg:  2.0, rpg:  3.8, stl: 0.9, blk: 0.4, fga:  7.8, fgm:  3.8, fta: 1.9, ftm: 1.5, tov: 1.0, gp: 71, searchName: 'Braun'          },
+    { name: 'Peyton Watson',            position: 'SF', mpg: 20.8, ppg:  7.6, apg:  1.2, rpg:  3.9, stl: 0.8, blk: 0.7, fga:  6.2, fgm:  2.9, fta: 1.4, ftm: 1.0, tov: 0.8, gp: 65, searchName: 'Watson'         },
     { name: 'Zeke Nnaji',               position: 'C',  mpg: 17.3, ppg:  6.5, apg:  0.9, rpg:  4.2, stl: 0.5, blk: 0.5, fga:  5.8, fgm:  2.9, fta: 1.6, ftm: 1.2, tov: 0.7, gp: 58, searchName: 'Nnaji'         },
   ],
 };
@@ -348,7 +348,13 @@ export async function POST(req: NextRequest) {
         await new Promise(r => setTimeout(r, 800));
         const searchJson = await bdlGet(`/players?search=${encodeURIComponent(h.searchName)}&per_page=10`);
         const match = (searchJson?.data ?? []).find((p: any) =>
-          `${p.first_name} ${p.last_name}`.toLowerCase() === h.name.toLowerCase()
+          (() => {
+            const full = `${p.first_name} ${p.last_name}`.toLowerCase();
+            const target = h.name.toLowerCase();
+            // Exact match, or last name contains the target last name (handles Jr./accents)
+            return full === target || full.includes(target) || target.includes(full) ||
+              p.last_name.toLowerCase() === h.name.split(' ').pop()!.toLowerCase().replace('.','');
+          })()
         );
         const realId = match ? Number(match.id) : null;
 
