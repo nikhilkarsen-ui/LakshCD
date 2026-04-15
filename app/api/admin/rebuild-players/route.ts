@@ -52,12 +52,15 @@ const FORCED_ADDITIONS: Record<string, Array<{
     // Force-inject the core Nuggets — BDL's global stats feed historically under-reports Denver.
     // KCP (left Denver), Russell Westbrook (left Denver), and MPJ (long-term injury) removed.
     // Current rotation filled by live BDL data: Cameron Johnson, Tim Hardaway Jr., Jonas Valanciunas.
-    { name: 'Nikola Jokic',    position: 'C',  mpg: 34.9, ppg: 29.6, apg: 10.2, rpg: 13.0, stl: 1.4, blk: 1.0, fga: 17.4, fgm: 11.3, fta: 6.2, ftm: 5.2, tov: 3.7, gp: 79, searchName: 'Jokic'   },
-    { name: 'Jamal Murray',    position: 'PG', mpg: 35.4, ppg: 25.4, apg:  5.9, rpg:  4.4, stl: 1.0, blk: 0.3, fga: 17.5, fgm:  9.0, fta: 4.6, ftm: 4.0, tov: 2.5, gp: 75, searchName: 'Murray'  },
-    { name: 'Aaron Gordon',    position: 'PF', mpg: 31.4, ppg: 16.2, apg:  3.7, rpg:  6.8, stl: 1.0, blk: 0.7, fga: 11.0, fgm:  6.0, fta: 3.0, ftm: 2.3, tov: 1.7, gp: 72, searchName: 'Gordon'  },
-    { name: 'Christian Braun', position: 'SG', mpg: 30.5, ppg: 15.4, apg:  2.5, rpg:  4.0, stl: 0.9, blk: 0.4, fga: 10.2, fgm:  4.9, fta: 2.5, ftm: 2.0, tov: 1.0, gp: 71, searchName: 'Braun'   },
-    { name: 'Peyton Watson',   position: 'SF', mpg: 20.8, ppg:  7.6, apg:  1.2, rpg:  3.9, stl: 0.8, blk: 0.7, fga:  6.2, fgm:  2.9, fta: 1.4, ftm: 1.0, tov: 0.8, gp: 65, searchName: 'Watson'  },
-    { name: 'Zeke Nnaji',      position: 'C',  mpg: 17.3, ppg:  6.5, apg:  0.9, rpg:  4.2, stl: 0.5, blk: 0.5, fga:  5.8, fgm:  2.9, fta: 1.6, ftm: 1.2, tov: 0.7, gp: 58, searchName: 'Nnaji'   },
+    { name: 'Nikola Jokic',        position: 'C',  mpg: 34.9, ppg: 29.6, apg: 10.2, rpg: 13.0, stl: 1.4, blk: 1.0, fga: 17.4, fgm: 11.3, fta: 6.2, ftm: 5.2, tov: 3.7, gp: 79, searchName: 'Jokic'       },
+    { name: 'Jamal Murray',        position: 'PG', mpg: 35.4, ppg: 25.4, apg:  5.9, rpg:  4.4, stl: 1.0, blk: 0.3, fga: 17.5, fgm:  9.0, fta: 4.6, ftm: 4.0, tov: 2.5, gp: 75, searchName: 'Murray'       },
+    { name: 'Aaron Gordon',        position: 'PF', mpg: 31.4, ppg: 16.2, apg:  3.7, rpg:  6.8, stl: 1.0, blk: 0.7, fga: 11.0, fgm:  6.0, fta: 3.0, ftm: 2.3, tov: 1.7, gp: 72, searchName: 'Gordon'       },
+    { name: 'Christian Braun',     position: 'SG', mpg: 30.5, ppg: 15.4, apg:  2.5, rpg:  4.0, stl: 0.9, blk: 0.4, fga: 10.2, fgm:  4.9, fta: 2.5, ftm: 2.0, tov: 1.0, gp: 71, searchName: 'Braun'        },
+    { name: 'Cameron Johnson',     position: 'SF', mpg: 31.0, ppg: 14.5, apg:  2.2, rpg:  4.2, stl: 0.8, blk: 0.3, fga: 11.5, fgm:  5.3, fta: 2.2, ftm: 1.8, tov: 1.1, gp: 68, searchName: 'Cameron Johnson' },
+    { name: 'Tim Hardaway Jr.',    position: 'SG', mpg: 28.0, ppg: 13.5, apg:  2.0, rpg:  3.0, stl: 0.7, blk: 0.2, fga: 11.0, fgm:  5.0, fta: 2.0, ftm: 1.7, tov: 1.0, gp: 65, searchName: 'Hardaway'      },
+    { name: 'Peyton Watson',       position: 'SF', mpg: 20.8, ppg:  7.6, apg:  1.2, rpg:  3.9, stl: 0.8, blk: 0.7, fga:  6.2, fgm:  2.9, fta: 1.4, ftm: 1.0, tov: 0.8, gp: 65, searchName: 'Watson'        },
+    { name: 'Jonas Valanciunas',   position: 'C',  mpg: 22.0, ppg: 10.2, apg:  1.5, rpg:  8.0, stl: 0.5, blk: 0.7, fga:  8.0, fgm:  4.2, fta: 2.5, ftm: 2.0, tov: 1.3, gp: 60, searchName: 'Valanciunas'   },
+    { name: 'Zeke Nnaji',          position: 'C',  mpg: 17.3, ppg:  6.5, apg:  0.9, rpg:  4.2, stl: 0.5, blk: 0.5, fga:  5.8, fgm:  2.9, fta: 1.6, ftm: 1.2, tov: 0.7, gp: 58, searchName: 'Nnaji'         },
   ],
 };
 
