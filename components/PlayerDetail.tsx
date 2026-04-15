@@ -110,7 +110,7 @@ function fmtTime(ts: number, range: ChartRange): string {
 
 const TIMEFRAMES: ChartRange[] = ['1H', '8H', '24H', '1W', 'ALL'];
 const RANGE_LABEL: Record<ChartRange, string> = {
-  '1H': '1 hour', '8H': '8 hours', '24H': '24 hours', '1W': '7 days', 'ALL': 'All-time',
+  '1H': '1 hour', '8H': '8 hours', '24H': '24 hours', '1W': '7 days', 'ALL': '7 days',
 };
 
 // ── Custom animated price line tooltip dot ────────────────────────────────────

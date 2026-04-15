@@ -12,11 +12,11 @@ const NF = [
 // We fetch more raw rows than we'll display — the client LTTB-downsamples
 // to the visual budget. DESC order ensures we always get the most recent N.
 const TIMEFRAME: Record<string, { ms: number; limit: number }> = {
-  '1H':  { ms: 1  * 3_600_000,  limit: 800  }, // 5s ticks → up to 720 pts/hr
+  '1H':  { ms: 1  * 3_600_000,  limit: 800  }, // live ticks → up to ~120 pts/hr at 30-min cadence
   '8H':  { ms: 8  * 3_600_000,  limit: 800  }, // raw subsample of 8h window
-  '24H': { ms: 24 * 3_600_000,  limit: 800  }, // raw subsample of 24h window
-  '1W':  { ms: 7  * 86_400_000, limit: 1000 }, // seed data is hourly → ~168 pts
-  'ALL': { ms: 365 * 86_400_000, limit: 1000 }, // full seed history
+  '24H': { ms: 24 * 3_600_000,  limit: 800  }, // raw subsample of 24h window (~48 pts at 30-min cadence)
+  '1W':  { ms: 7  * 86_400_000, limit: 1000 }, // seed data at 30-min cadence → ~336 pts
+  'ALL': { ms: 7  * 86_400_000, limit: 1000 }, // history pruned to 7 days — same window as 1W
   // backward-compat aliases
   '1D':  { ms: 24 * 3_600_000,  limit: 800  },
   '1M':  { ms: 30 * 86_400_000, limit: 1000 },

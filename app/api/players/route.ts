@@ -24,21 +24,25 @@ export async function GET() {
       return sum + shares * price;
     }, 0);
 
-    // Sparkline data — last ~30 tick snapshots per player (ticks fire simultaneously,
+    // Sparkline data — last 24h of tick snapshots per player (ticks fire simultaneously,
     // so ordering DESC + limit gives evenly distributed recency across all players).
+    // Time filter prevents the global limit from shrinking per-player coverage as
+    // the price_history table grows over time.
     let sparklines: Record<string, { price: number }[]> = {};
     if (players.length > 0) {
       const playerIds = players.map((p: any) => p.id);
-      // Fetch 24h of history (288 ticks at 5-min cadence) then downsample to
-      // 60 evenly-spaced points per player for the sparkline. Sending 288 × 108
+      // Fetch 25h of history (48 ticks at 30-min cadence, with 1h buffer) then downsample to
+      // 60 evenly-spaced points per player for the sparkline. Sending 48 × 108
       // rows to the client is wasteful; 60 points is more than enough visual fidelity.
       const SPARKLINE_POINTS = 60;
+      const since25h = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
       const { data: hist } = await db
         .from('price_history')
         .select('player_id, price')
         .in('player_id', playerIds)
+        .gte('created_at', since25h)
         .order('created_at', { ascending: false })
-        .limit(players.length * 288);
+        .limit(players.length * 100);
 
       // Group by player (DESC → oldest last), then reverse to ASC and downsample
       const grouped: Record<string, { price: number }[]> = {};
