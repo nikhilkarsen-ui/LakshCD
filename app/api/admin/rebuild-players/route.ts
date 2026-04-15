@@ -146,8 +146,8 @@ export async function POST(req: NextRequest) {
     }
     log(`Resolved ${resolvedTeams.length}/${TARGET_TEAMS.length} teams`);
 
-    // ── Step 2: Fetch rosters for each team ───────────────────────────────────
-    log('Fetching rosters...');
+    // ── Step 2: Fetch active rosters for each team (paginated) ──────────────
+    log('Fetching active rosters...');
     // Map: bdlPlayerId → { bdlPlayerId, name, position, teamName }
     const allRosterPlayers = new Map<number, {
       bdlPlayerId: number;
@@ -158,57 +158,69 @@ export async function POST(req: NextRequest) {
 
     for (const team of resolvedTeams) {
       await delay(300);
-      const json = await bdlGet(`/players?team_ids[]=${team.bdlId}&per_page=100`);
-      const players = json?.data ?? [];
-      log(`  ${team.name}: ${players.length} players on roster`);
-      for (const p of players) {
-        const fullName = `${p.first_name} ${p.last_name}`.trim();
-        const position = p.position || 'F';
-        if (!allRosterPlayers.has(p.id)) {
-          allRosterPlayers.set(p.id, {
-            bdlPlayerId: p.id,
-            name: fullName,
-            position,
-            teamName: team.name,
-          });
+      // active=1 filters to current roster only — avoids pulling thousands of historical players
+      let cursor: number | undefined;
+      let pageCount = 0;
+      let teamPlayerCount = 0;
+      do {
+        const cursorParam = cursor ? `&cursor=${cursor}` : '';
+        const json = await bdlGet(
+          `/players?team_ids[]=${team.bdlId}&active=1&per_page=100${cursorParam}`
+        );
+        const players: any[] = json?.data ?? [];
+        for (const p of players) {
+          const fullName = `${p.first_name} ${p.last_name}`.trim();
+          const position = p.position || 'F';
+          if (!allRosterPlayers.has(p.id)) {
+            allRosterPlayers.set(p.id, {
+              bdlPlayerId: p.id,
+              name: fullName,
+              position,
+              teamName: team.name,
+            });
+            teamPlayerCount++;
+          }
         }
-      }
+        cursor = json?.meta?.next_cursor;
+        pageCount++;
+        if (cursor) await delay(300);
+      } while (cursor && pageCount < 5); // max 5 pages (500 players) per team — safety cap
+      log(`  ${team.name}: ${teamPlayerCount} active players`);
     }
-    log(`Total roster players to evaluate: ${allRosterPlayers.size}`);
+    log(`Total active roster players to evaluate: ${allRosterPlayers.size}`);
 
-    // ── Step 3: Fetch season averages (try batch, fall back to individual) ────
+    // ── Step 3: Fetch season averages in chunks of 50 to avoid 431 ───────────
     log('Fetching season averages...');
     const allBdlIds = Array.from(allRosterPlayers.keys());
     const statsMap = new Map<number, any>(); // bdlPlayerId → stats row
+    const CHUNK_SIZE = 50;
 
-    // Try batch first
-    const batchParams = allBdlIds.map(id => `player_ids[]=${id}`).join('&');
-    await delay(300);
-    const batchJson = await bdlGet(`/season_averages?season=2025&${batchParams}`);
+    for (let i = 0; i < allBdlIds.length; i += CHUNK_SIZE) {
+      const chunk = allBdlIds.slice(i, i + CHUNK_SIZE);
+      await delay(300);
+      const params = chunk.map(id => `player_ids[]=${id}`).join('&');
+      const json = await bdlGet(`/season_averages?season=2025&${params}`);
 
-    if (batchJson?.data && batchJson.data.length > 0) {
-      // Batch worked
-      for (const entry of batchJson.data) {
-        const pid = entry?.player?.id ?? entry?.player_id;
-        if (pid != null) statsMap.set(Number(pid), entry);
-      }
-      log(`Batch season averages returned ${statsMap.size} entries`);
-    } else {
-      // Fall back to individual requests
-      log('Batch endpoint returned no data — falling back to individual requests');
-      let fetched = 0;
-      for (const bdlId of allBdlIds) {
-        await delay(350);
-        const json = await bdlGet(`/season_averages?season=2025&player_id=${bdlId}`);
-        const entry = json?.data?.[0];
-        if (entry) {
-          statsMap.set(bdlId, entry);
-          fetched++;
+      if (json?.data && json.data.length > 0) {
+        for (const entry of json.data) {
+          const pid = entry?.player?.id ?? entry?.player_id;
+          if (pid != null) statsMap.set(Number(pid), entry);
         }
-        if (fetched % 20 === 0) log(`  Fetched ${fetched} / ${allBdlIds.length} season averages...`);
+        log(`  Batch ${Math.floor(i / CHUNK_SIZE) + 1}: fetched ${json.data.length} stats`);
+      } else if (json === null) {
+        // Tier doesn't support batch — fall back to individual for this chunk
+        log(`  Batch not supported — switching to individual requests for chunk ${Math.floor(i / CHUNK_SIZE) + 1}`);
+        for (const bdlId of chunk) {
+          await delay(350);
+          const indJson = await bdlGet(`/season_averages?season=2025&player_id=${bdlId}`);
+          const entry = indJson?.data?.[0];
+          if (entry) statsMap.set(bdlId, entry);
+        }
+      } else {
+        log(`  Batch ${Math.floor(i / CHUNK_SIZE) + 1}: no data returned`);
       }
-      log(`Individual fetch complete: ${fetched} players with stats`);
     }
+    log(`Season averages fetched: ${statsMap.size} players with stats`);
 
     // ── Step 4: Filter and select top 9 per team ─────────────────────────────
     log('Filtering and selecting top 9 per team...');
