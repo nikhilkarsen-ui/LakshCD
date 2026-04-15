@@ -31,6 +31,23 @@ const MIN_GAMES  = 3;    // minimum games in our sample to trust the data
 
 const BDL_BASE = 'https://api.balldontlie.io/v1';
 
+// Star players to always inject regardless of whether the team already has ≥9 from the live feed.
+// Use this for players who are missing from BDL's stats feed (injured, DNP stretches, etc.)
+// but who should still appear in the Laksh universe. Their BDL ID is resolved at runtime via
+// a name search so the price cron can track live game data for them.
+const FORCED_ADDITIONS: Record<string, Array<{
+  name: string; position: string;
+  mpg: number; ppg: number; apg: number; rpg: number;
+  stl: number; blk: number; fga: number; fgm: number;
+  fta: number; ftm: number; tov: number; gp: number;
+  searchName: string; // last name (or "First Last") passed to /players?search=
+}>> = {
+  'Boston Celtics': [
+    { name: 'Jayson Tatum',  position: 'SF', mpg: 35.5, ppg: 30.2, apg: 5.1, rpg: 8.5, stl: 1.0, blk: 0.6, fga: 19.0, fgm: 10.0, fta: 7.5, ftm: 6.3, tov: 2.8, gp: 42, searchName: 'Tatum'  },
+    { name: 'Jrue Holiday',  position: 'SG', mpg: 30.5, ppg: 12.5, apg: 4.8, rpg: 5.1, stl: 1.6, blk: 0.4, fga: 10.2, fgm:  4.8, fta: 3.1, ftm: 2.5, tov: 2.0, gp: 58, searchName: 'Holiday' },
+  ],
+};
+
 // Hardcoded fallback stats for teams whose BDL data is absent or incomplete.
 // Format: teamName → array of player stat rows (2024-25 season averages).
 // Only used when the live BDL feed + individual fallback still produces < 9 players.
@@ -316,7 +333,52 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Step 2c: Inject hardcoded players for teams still short ──────────────
+    // ── Step 2c: Always inject forced additions (stars missing from BDL feed) ─
+    // Runs unconditionally — injects regardless of how many live players the team has.
+    // Top-9-by-MPG selection in Step 3 naturally bumps the weakest players out.
+    for (const [teamName, forced] of Object.entries(FORCED_ADDITIONS)) {
+      const resolvedTeam = resolvedTeams.find(t => t.name === teamName);
+      if (!resolvedTeam) continue;
+
+      for (const h of forced) {
+        const nameExists = [...allAgg.values()].some(a => a.teamName === teamName && a.name === h.name);
+        if (nameExists) continue;
+
+        // Search BDL by name to get the real player ID for live price tracking
+        await new Promise(r => setTimeout(r, 800));
+        const searchJson = await bdlGet(`/players?search=${encodeURIComponent(h.searchName)}&per_page=10`);
+        const match = (searchJson?.data ?? []).find((p: any) =>
+          `${p.first_name} ${p.last_name}`.toLowerCase() === h.name.toLowerCase()
+        );
+        const realId = match ? Number(match.id) : null;
+
+        let syntheticId = -Date.now(); // guaranteed unique fallback
+        const bdlId = realId ?? syntheticId;
+        if (!realId && allAgg.has(bdlId)) continue;
+
+        log(`  [${teamName}] Force-injecting ${h.name} (BDL ID: ${realId ?? 'none — synthetic'})`);
+        allAgg.set(bdlId, {
+          bdlId,
+          name:     h.name,
+          position: h.position,
+          teamName,
+          gamesInSample: h.gp,
+          sumMin:  h.mpg * h.gp,
+          sumPts:  h.ppg * h.gp,
+          sumAst:  h.apg * h.gp,
+          sumReb:  h.rpg * h.gp,
+          sumStl:  h.stl * h.gp,
+          sumBlk:  h.blk * h.gp,
+          sumFga:  h.fga * h.gp,
+          sumFgm:  h.fgm * h.gp,
+          sumFta:  h.fta * h.gp,
+          sumFtm:  h.ftm * h.gp,
+          sumTov:  h.tov * h.gp,
+        });
+      }
+    }
+
+    // ── Step 2d: Inject hardcoded players for teams still short ──────────────
     for (const team of resolvedTeams) {
       const hardcoded = HARDCODED_TEAM_STATS[team.name];
       if (!hardcoded) continue;
