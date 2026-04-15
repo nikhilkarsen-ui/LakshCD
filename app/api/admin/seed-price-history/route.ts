@@ -146,7 +146,9 @@ export async function POST(req: NextRequest) {
     const allInserts: any[] = [];
 
     for (const player of players as any[]) {
-      const fv             = computeFV(player);
+      // Use current_price as the O-U reversion target so the history converges
+      // toward exactly the price the live tick will continue from — no boundary jump.
+      const fv             = Number(player.current_price);
       const { startOffsetFrac, sigmaMultiplier } = playerProfile(player, fv);
 
       // Seeded RNG per player for deterministic output
