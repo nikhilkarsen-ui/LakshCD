@@ -29,9 +29,9 @@ const min_price   = 5;
 const LEAGUE_AVG  = 0.45;
 const CRED_GAMES  = 20;
 
-const BDL_BASE   = 'https://api.balldontlie.io/v1';
-const DELAY_MS   = 1100; // 1100ms = ~54 req/min, safely under the 60 req/min limit
-const RETRY_MS   = 35_000; // wait 35s on 429 before retrying
+const BDL_BASE = 'https://api.balldontlie.io/v1';
+const DELAY_MS = 1100; // ~54 req/min, safely under 60/min limit
+const RETRY_MS = 35_000;
 
 function bdlHeaders(): Record<string, string> {
   const key = process.env.BALLDONTLIE_API_KEY;
@@ -43,7 +43,6 @@ function delay(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
-/** Rate-limit-safe BDL fetch with one 429 retry */
 async function bdlGet(path: string, attempt = 0): Promise<any> {
   const res = await fetch(`${BDL_BASE}${path}`, {
     headers: bdlHeaders(),
@@ -54,7 +53,7 @@ async function bdlGet(path: string, attempt = 0): Promise<any> {
     return bdlGet(path, 1);
   }
   if (res.status === 400 || res.status === 402 || res.status === 403 || res.status === 404) {
-    return null; // not supported on this tier — caller handles
+    return null;
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -63,7 +62,6 @@ async function bdlGet(path: string, attempt = 0): Promise<any> {
   return res.json();
 }
 
-/** Parse minutes field — BDL may return "35:12" or "35.3" or a number */
 function parseMinutes(min: string | number | null | undefined): number {
   if (min == null) return 0;
   const s = String(min).trim();
@@ -74,7 +72,6 @@ function parseMinutes(min: string | number | null | undefined): number {
   return parseFloat(s) || 0;
 }
 
-/** NBA Efficiency = PTS + REB + AST + STL + BLK − (FGA−FGM) − (FTA−FTM) − TOV */
 function computeEfficiency(s: any): number {
   const n = (v: any) => Number(v || 0);
   return (
@@ -108,37 +105,51 @@ function computePools(price: number): { pool_x: number; pool_y: number } {
 }
 
 /**
- * Get candidates for a team who have played in the 2025 season.
+ * Discover which players actually played for a team in the 2025 season.
  *
- * Strategy A: /players?season=2025&team_ids[]=X  → players with 2025 game activity
- * Strategy B: /players?team_ids[]=X              → full historical roster (fallback)
+ * Uses /stats?seasons[]=2025&team_ids[]=X to get real game stat rows —
+ * every player ID extracted is guaranteed to have played this season.
+ * Returns a map of bdlPlayerId → { name, position }.
  *
- * Returns at most `limit` candidate players (bdlId, name, position).
+ * Falls back to /players?team_ids[]=X roster if stats endpoint returns nothing.
  */
-async function getTeamCandidates(
+async function discoverTeamPlayers(
   bdlTeamId: number,
-  limit: number,
-  log: (msg: string) => void,
   teamName: string,
-): Promise<Array<{ bdlId: number; name: string; position: string }>> {
-  // Try season-filtered first — reduces candidates to players with 2025 activity
-  await delay(DELAY_MS);
-  let json = await bdlGet(`/players?season=2025&team_ids[]=${bdlTeamId}&per_page=${limit}`);
+  log: (msg: string) => void,
+): Promise<Map<number, { name: string; position: string }>> {
+  const result = new Map<number, { name: string; position: string }>();
 
-  if (!json?.data || json.data.length === 0) {
-    log(`  [${teamName}] season=2025 filter returned no results — using full roster`);
-    await delay(DELAY_MS);
-    json = await bdlGet(`/players?team_ids[]=${bdlTeamId}&per_page=${limit}`);
+  // Primary: pull up to 100 game stat rows from the 2025 season for this team.
+  // Each row is one player's stats in one game, so 100 rows ≈ 6–7 games worth of data.
+  // Unique player IDs from these rows = current rotation players.
+  await delay(DELAY_MS);
+  const statsJson = await bdlGet(`/stats?seasons[]=2025&team_ids[]=${bdlTeamId}&per_page=100`);
+  const statRows: any[] = statsJson?.data ?? [];
+
+  if (statRows.length > 0) {
+    for (const row of statRows) {
+      const pid = row?.player?.id;
+      if (pid == null) continue;
+      const name     = `${row.player.first_name || ''} ${row.player.last_name || ''}`.trim();
+      const position = row.player.position || 'F';
+      if (!result.has(Number(pid))) result.set(Number(pid), { name, position });
+    }
+    log(`  [${teamName}] ${result.size} unique players found via 2025 game stats`);
+    return result;
   }
 
-  const players: any[] = json?.data ?? [];
-  log(`  [${teamName}] ${players.length} candidates`);
-
-  return players.map((p: any) => ({
-    bdlId:    Number(p.id),
-    name:     `${p.first_name || ''} ${p.last_name || ''}`.trim(),
-    position: p.position || 'F',
-  }));
+  // Fallback: roster endpoint (may include historical players)
+  log(`  [${teamName}] stats endpoint returned nothing — falling back to roster`);
+  await delay(DELAY_MS);
+  const rosterJson = await bdlGet(`/players?team_ids[]=${bdlTeamId}&per_page=50`);
+  for (const p of rosterJson?.data ?? []) {
+    const name     = `${p.first_name || ''} ${p.last_name || ''}`.trim();
+    const position = p.position || 'F';
+    result.set(Number(p.id), { name, position });
+  }
+  log(`  [${teamName}] fallback roster: ${result.size} players`);
+  return result;
 }
 
 export async function POST(req: NextRequest) {
@@ -169,23 +180,25 @@ export async function POST(req: NextRequest) {
     }
     log(`Resolved ${resolvedTeams.length}/${TARGET_TEAMS.length} teams`);
 
-    // ── Step 2: Get candidates per team ───────────────────────────────────────
-    // Max 15 candidates per team × 12 teams = 180 individual stat requests.
-    // At 1100ms each ≈ 198s + overhead = well within 300s.
-    const CANDIDATES_PER_TEAM = 15;
-    log(`Fetching up to ${CANDIDATES_PER_TEAM} candidates per team...`);
+    // ── Step 2: Discover current players via 2025 game stats ──────────────────
+    // One /stats request per team → guaranteed-current player IDs, no historical bloat.
+    log('Discovering current players from 2025 game stats...');
 
     type Candidate = { bdlId: number; name: string; position: string; teamName: string };
     const allCandidates: Candidate[] = [];
 
     for (const team of resolvedTeams) {
-      const candidates = await getTeamCandidates(team.bdlId, CANDIDATES_PER_TEAM, log, team.name);
-      for (const c of candidates) allCandidates.push({ ...c, teamName: team.name });
+      const players = await discoverTeamPlayers(team.bdlId, team.name, log);
+      for (const [bdlId, info] of players) {
+        allCandidates.push({ bdlId, ...info, teamName: team.name });
+      }
     }
-    log(`Total candidates: ${allCandidates.length}`);
+    log(`Total candidates: ${allCandidates.length} across ${resolvedTeams.length} teams`);
 
     // ── Step 3: Fetch individual season averages for each candidate ───────────
-    log('Fetching individual season averages (1100ms between requests)...');
+    // 1100ms between each request to stay within 60 req/min.
+    // ~15–20 candidates per team × 12 teams ≈ 180–240 requests ≈ 3–4 min total.
+    log('Fetching season averages (1100ms throttle)...');
 
     type PlayerEntry = {
       bdlPlayerId: number; name: string; position: string; teamName: string;
@@ -198,22 +211,25 @@ export async function POST(req: NextRequest) {
       const c = allCandidates[i];
       await delay(DELAY_MS);
 
-      const json = await bdlGet(`/season_averages?season=2025&player_id=${c.bdlId}`);
+      const json  = await bdlGet(`/season_averages?season=2025&player_id=${c.bdlId}`);
       const stats = json?.data?.[0];
       if (!stats) continue;
 
       const mpg = parseMinutes(stats.min);
       const gp  = Number(stats.games_played || 0);
-      if (mpg < 10 || gp < 10) continue; // bench / G-League
+      if (mpg < 10 || gp < 10) continue;
 
       const ppg = parseFloat(Number(stats.pts || 0).toFixed(1));
       const apg = parseFloat(Number(stats.ast || 0).toFixed(1));
       const rpg = parseFloat(Number(stats.reb || 0).toFixed(1));
       const eff = parseFloat(computeEfficiency(stats).toFixed(1));
 
-      byTeam.get(c.teamName)?.push({ bdlPlayerId: c.bdlId, name: c.name, position: c.position, teamName: c.teamName, mpg, ppg, apg, rpg, eff, gp });
+      byTeam.get(c.teamName)?.push({
+        bdlPlayerId: c.bdlId, name: c.name, position: c.position,
+        teamName: c.teamName, mpg, ppg, apg, rpg, eff, gp,
+      });
 
-      if ((i + 1) % 15 === 0) log(`  ${i + 1}/${allCandidates.length} done`);
+      if ((i + 1) % 20 === 0) log(`  Progress: ${i + 1}/${allCandidates.length} candidates checked`);
     }
 
     // ── Step 4: Select top 9 per team ────────────────────────────────────────
@@ -232,12 +248,12 @@ export async function POST(req: NextRequest) {
     const underTeams = [...byTeam.entries()].filter(([, p]) => p.length < 9);
     if (underTeams.length > 0) {
       log('WARNING: Teams with fewer than 9 qualified players:');
-      for (const [t, p] of underTeams) log(`  ${t}: only ${p.length} qualified — consider raising CANDIDATES_PER_TEAM`);
+      for (const [t, p] of underTeams) log(`  ${t}: ${p.length} players found`);
     }
     log(`Total players selected: ${finalPlayers.length}`);
 
     if (finalPlayers.length === 0) {
-      throw new Error('No players selected — season averages returned no qualifying data. Check BDL API key and season parameter.');
+      throw new Error('No players selected — check BDL API key and whether the 2025 season has game data.');
     }
 
     // ── Step 5: Delete all existing players ──────────────────────────────────
@@ -247,9 +263,8 @@ export async function POST(req: NextRequest) {
     log('All players deleted.');
 
     // ── Step 6: Insert new players ────────────────────────────────────────────
-    log('Inserting new players...');
+    log('Inserting...');
     const now = new Date().toISOString();
-
     const inserts = finalPlayers.map(p => {
       const { evScore, price, priorFvScore } = computePrice(p.ppg, p.apg, p.rpg, p.eff, p.gp);
       const { pool_x, pool_y } = computePools(price);
@@ -258,16 +273,13 @@ export async function POST(req: NextRequest) {
         current_price: price, previous_price: price,
         price_change_24h: 0, price_change_pct_24h: 0,
         expected_value: parseFloat(evScore.toFixed(2)),
-        expected_final_value: price,
-        volatility: 0.05,
+        expected_final_value: price, volatility: 0.05,
         ppg: p.ppg, apg: p.apg, rpg: p.rpg, efficiency: p.eff, games_played: p.gp,
-        pool_x, pool_y,
-        is_active: true, settlement_status: 'active',
+        pool_x, pool_y, is_active: true, settlement_status: 'active',
         bdl_player_id: p.bdlPlayerId, stats_synced_at: now,
         fair_value: price, twap_price: price, twap_30m: price,
         market_depth: 80000, blend_w_amm: 0.15, blend_w_fv: 0.65, blend_w_twap: 0.20,
-        live_game_boost: 0, momentum_breaker_active: false,
-        prior_fv_score: priorFvScore,
+        live_game_boost: 0, momentum_breaker_active: false, prior_fv_score: priorFvScore,
         created_at: now, updated_at: now,
       };
     });
