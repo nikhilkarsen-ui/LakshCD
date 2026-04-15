@@ -1,8 +1,9 @@
 'use client';
+import { useState, useCallback } from 'react';
 import { Card, Label } from './ui';
 import LakshLogo from './LakshLogo';
 import { SEASON } from '@/config/constants';
-import { useCountdown, usePortfolio } from '@/hooks';
+import { useCountdown, usePortfolio, useAuth } from '@/hooks';
 import { fmt, fmtPct } from './ui';
 
 const settlementDate = new Date(SEASON.settlement_date).toLocaleDateString('en-US', {
@@ -73,10 +74,31 @@ const GLOSSARY = [
 
 export default function AboutView() {
   const countdown = useCountdown(SEASON.settlement_date);
-  const { portfolio } = usePortfolio();
-  const totalPnl = portfolio?.total_pnl ?? null;
-  const totalPnlPct = portfolio?.total_pnl_pct ?? null;
+  const { portfolio, userProfile } = usePortfolio();
+  const { session } = useAuth();
+  const totalPnl        = portfolio?.total_pnl ?? null;
+  const totalPnlPct     = portfolio?.total_pnl_pct ?? null;
+  const poolSharePct    = portfolio?.pool_share_pct ?? null;
+  const estimatedPayout = portfolio?.estimated_payout ?? null;
   const up = (totalPnl ?? 0) >= 0;
+
+  // Feedback form state
+  const [fbMsg, setFbMsg]     = useState('');
+  const [fbStatus, setFbStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+
+  const sendFeedback = useCallback(async () => {
+    if (!fbMsg.trim() || fbStatus === 'sending') return;
+    setFbStatus('sending');
+    try {
+      const r = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ message: fbMsg.trim() }),
+      });
+      if (r.ok) { setFbStatus('sent'); setFbMsg(''); }
+      else setFbStatus('error');
+    } catch { setFbStatus('error'); }
+  }, [fbMsg, fbStatus, session?.access_token]);
 
   return (
     <div className="p-4 animate-fade-in space-y-3 pb-8">
@@ -134,6 +156,26 @@ export default function AboutView() {
           </div>
         </div>
       </div>
+
+      {/* Pool share + estimated payout */}
+      {poolSharePct !== null && estimatedPayout !== null && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-2xl border border-lk-accent/20 bg-lk-accent/5 p-4 flex flex-col gap-1">
+            <div className="text-[10px] uppercase tracking-widest text-lk-dim">Your pool share</div>
+            <div className="font-bold text-xl text-lk-accent leading-tight">
+              {poolSharePct.toFixed(2)}%
+            </div>
+            <div className="text-[11px] text-lk-dim">of all portfolios combined</div>
+          </div>
+          <div className="rounded-2xl border border-lk-accent/20 bg-lk-accent/5 p-4 flex flex-col gap-1">
+            <div className="text-[10px] uppercase tracking-widest text-lk-dim">Estimated payout</div>
+            <div className="font-bold text-xl text-lk-accent leading-tight">
+              {fmt(estimatedPayout)}
+            </div>
+            <div className="text-[11px] text-lk-dim">if season ended now</div>
+          </div>
+        </div>
+      )}
 
       {/* Key facts */}
       <div className="grid grid-cols-3 gap-2">
@@ -203,6 +245,43 @@ export default function AboutView() {
             </div>
           ))}
         </div>
+      </Card>
+
+      {/* Feedback form */}
+      <Card>
+        <Label>Send Feedback</Label>
+        <p className="text-xs text-lk-dim mt-1 mb-3">
+          Bug, suggestion, or anything else — goes straight to Nikhil.
+        </p>
+        {fbStatus === 'sent' ? (
+          <div className="rounded-xl bg-lk-accent/10 border border-lk-accent/20 p-3 text-sm text-lk-accent text-center">
+            Sent. Thanks for the feedback.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <textarea
+              value={fbMsg}
+              onChange={e => { setFbMsg(e.target.value); if (fbStatus !== 'idle') setFbStatus('idle'); }}
+              placeholder="What's on your mind?"
+              rows={4}
+              maxLength={2000}
+              className="w-full rounded-xl border border-lk-border bg-lk-bg px-3 py-2.5 text-sm text-lk-text placeholder:text-lk-muted resize-none focus:outline-none focus:border-lk-accent/50 transition-colors"
+            />
+            <div className="flex items-center justify-between gap-2">
+              {fbStatus === 'error' && (
+                <span className="text-xs text-lk-red">Failed to send — try again.</span>
+              )}
+              <div className="flex-1" />
+              <button
+                onClick={sendFeedback}
+                disabled={!fbMsg.trim() || fbStatus === 'sending'}
+                className="rounded-full bg-lk-accent px-5 py-2 text-xs font-semibold text-black disabled:opacity-40 transition hover:brightness-110"
+              >
+                {fbStatus === 'sending' ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Disclaimer */}

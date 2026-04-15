@@ -70,6 +70,39 @@ export async function sendApprovalNotification(email: string) {
   }
 }
 
+export async function sendFeedback(fromEmail: string, fromName: string, message: string) {
+  const apiKey      = process.env.RESEND_API_KEY;
+  const senderEmail = process.env.RESEND_FROM_EMAIL;
+  const adminEmail  = process.env.ADMIN_NOTIFICATION_EMAIL || 'nikhil@laksh.app';
+
+  if (!apiKey || !senderEmail) {
+    throw new Error('Missing RESEND_API_KEY or RESEND_FROM_EMAIL environment variable');
+  }
+
+  const response = await fetch(RESEND_API_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: senderEmail,
+      to: adminEmail,
+      reply_to: fromEmail,
+      subject: `Laksh feedback from ${fromName}`,
+      html: `
+        <div style="font-family: system-ui, sans-serif; background: #020617; color: #f8fafc; padding: 24px; border-radius: 18px;">
+          <h1 style="font-size: 1.25rem; margin-bottom: 8px;">Feedback from ${fromName}</h1>
+          <p style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 16px;">${fromEmail}</p>
+          <div style="background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; font-size: 1rem; line-height: 1.6; white-space: pre-wrap;">${message}</div>
+        </div>
+      `,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Resend API request failed: ${response.status} ${body}`);
+  }
+}
+
 export async function sendAdminWaitlistNotification(email: string) {
   const apiKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.RESEND_FROM_EMAIL;

@@ -74,6 +74,26 @@ export async function GET(req: NextRequest) {
   const totalValue = balance + totalHoldingsValue;
   const totalPnlPct = initial > 0 ? ((totalValue - initial) / initial) * 100 : 0;
 
+  // Pool share: sum all approved users' portfolio values to compute proportional share
+  const [{ data: allUsers }, { data: allPos }] = await Promise.all([
+    db.from('users').select('id, balance').eq('is_approved', true),
+    db.from('positions').select('user_id, shares_owned, player:players(current_price)').gt('shares_owned', 0),
+  ]);
+  const holdingsMap: Record<string, number> = {};
+  for (const p of (allPos || [])) {
+    const shares = Number((p as any).shares_owned);
+    const price  = Number((p as any).player?.current_price || 0);
+    if (shares > 0 && price > 0)
+      holdingsMap[(p as any).user_id] = (holdingsMap[(p as any).user_id] || 0) + shares * price;
+  }
+  let totalAllPortfolios = 0;
+  for (const u of (allUsers || []))
+    totalAllPortfolios += Number(u.balance) + (holdingsMap[u.id] || 0);
+  const RAKE = 0.05;
+  const prizePool = totalAllPortfolios * (1 - RAKE);
+  const poolSharePct = totalAllPortfolios > 0 ? (totalValue / totalAllPortfolios) * 100 : 0;
+  const estimatedPayout = totalAllPortfolios > 0 ? (totalValue / totalAllPortfolios) * prizePool : 0;
+
   // Trade history
   const { data: trades } = await db
     .from('trades')
@@ -103,6 +123,8 @@ export async function GET(req: NextRequest) {
       realized_pnl: parseFloat(totalRealizedPnl.toFixed(2)),
       total_pnl: parseFloat(totalPnl.toFixed(2)),
       total_pnl_pct: parseFloat(totalPnlPct.toFixed(2)),
+      pool_share_pct: parseFloat(poolSharePct.toFixed(4)),
+      estimated_payout: parseFloat(estimatedPayout.toFixed(2)),
       positions: enriched,
     },
     trades: coercedTrades,

@@ -48,9 +48,10 @@ export const PRICING_V3: Record<string, number> = {
   // ── Slippage ──────────────────────────────────────────────────────────────
   slippage_exponent: 2.0,           // was 1.5 — quadratic not 1.5-power
   max_price_impact_per_trade: 0.05, // was 8% — now capped at 5%
-  // Circuit breaker: ±15% early season, tightens to ±5% at settlement
-  max_fv_deviation_base: 0.15,      // was 0.30 — much tighter
-  max_fv_deviation_floor: 0.04,     // near settlement: ±4%
+  // Circuit breaker: ±25% early season, tightens to ±8% at settlement
+  // Widened from 15%/4% — beta seed prices are still calibrating against real stat-based FV
+  max_fv_deviation_base: 0.25,
+  max_fv_deviation_floor: 0.08,     // near settlement: ±8%
   fee_rate_base: 0.002,             // base fee 0.2%
 
   // ── Dynamic fee escalation ────────────────────────────────────────────────

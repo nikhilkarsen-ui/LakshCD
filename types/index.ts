@@ -98,6 +98,8 @@ export interface PortfolioData {
   realized_pnl: number;     // cumulative realized P&L from all sells
   total_pnl: number;        // unrealized + realized
   total_pnl_pct: number;
+  pool_share_pct: number;   // user's % of total portfolio pool (determines payout)
+  estimated_payout: number; // pool_share_pct × prize pool
   positions: EnrichedPosition[];
 }
 
