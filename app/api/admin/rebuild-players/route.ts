@@ -43,19 +43,21 @@ const FORCED_ADDITIONS: Record<string, Array<{
   searchName: string; // last name (or "First Last") passed to /players?search=
 }>> = {
   'Boston Celtics': [
+    // Tatum: force-inject because he missed much of 2025-26 (Achilles, returned Mar 2026) —
+    // BDL may not have enough games to qualify him via MIN_GAMES filter.
     { name: 'Jayson Tatum',             position: 'SF', mpg: 35.5, ppg: 30.2, apg: 5.1, rpg: 8.5, stl: 1.0, blk: 0.6, fga: 19.0, fgm: 10.0, fta: 7.5, ftm: 6.3, tov: 2.8, gp: 42, searchName: 'Tatum'     },
-    { name: 'Jrue Holiday',             position: 'SG', mpg: 30.5, ppg: 12.5, apg: 4.8, rpg: 5.1, stl: 1.6, blk: 0.4, fga: 10.2, fgm:  4.8, fta: 3.1, ftm: 2.5, tov: 2.0, gp: 58, searchName: 'Holiday'   },
+    // Jrue Holiday was traded to Portland Trail Blazers on June 23, 2025 — removed.
   ],
   'Denver Nuggets': [
-    { name: 'Nikola Jokic',             position: 'C',  mpg: 34.9, ppg: 29.6, apg: 10.2, rpg: 13.0, stl: 1.4, blk: 1.0, fga: 17.4, fgm: 11.3, fta: 6.2, ftm: 5.2, tov: 3.7, gp: 79, searchName: 'Jokic'      },
-    { name: 'Jamal Murray',             position: 'PG', mpg: 34.1, ppg: 22.0, apg:  5.9, rpg:  4.4, stl: 1.0, blk: 0.3, fga: 16.9, fgm:  8.5, fta: 4.6, ftm: 4.0, tov: 2.5, gp: 60, searchName: 'Murray'        },
-    { name: 'Michael Porter Jr.',       position: 'SF', mpg: 32.8, ppg: 17.0, apg:  1.7, rpg:  7.0, stl: 0.7, blk: 0.6, fga: 12.5, fgm:  6.4, fta: 2.5, ftm: 2.1, tov: 1.2, gp: 58, searchName: 'Porter'         },
-    { name: 'Aaron Gordon',             position: 'PF', mpg: 31.4, ppg: 14.2, apg:  3.7, rpg:  6.8, stl: 1.0, blk: 0.7, fga: 10.5, fgm:  5.7, fta: 3.0, ftm: 2.3, tov: 1.7, gp: 72, searchName: 'Gordon'         },
-    { name: 'Kentavious Caldwell-Pope', position: 'SG', mpg: 29.6, ppg: 12.8, apg:  2.3, rpg:  3.3, stl: 1.1, blk: 0.3, fga: 10.0, fgm:  4.8, fta: 1.8, ftm: 1.5, tov: 1.1, gp: 70, searchName: 'Caldwell-Pope' },
-    { name: 'Russell Westbrook',        position: 'PG', mpg: 26.0, ppg: 11.0, apg:  5.2, rpg:  5.0, stl: 1.2, blk: 0.3, fga: 10.8, fgm:  4.5, fta: 3.5, ftm: 2.6, tov: 2.8, gp: 55, searchName: 'Westbrook'    },
-    { name: 'Christian Braun',          position: 'SG', mpg: 24.5, ppg:  9.4, apg:  2.0, rpg:  3.8, stl: 0.9, blk: 0.4, fga:  7.8, fgm:  3.8, fta: 1.9, ftm: 1.5, tov: 1.0, gp: 71, searchName: 'Braun'          },
-    { name: 'Peyton Watson',            position: 'SF', mpg: 20.8, ppg:  7.6, apg:  1.2, rpg:  3.9, stl: 0.8, blk: 0.7, fga:  6.2, fgm:  2.9, fta: 1.4, ftm: 1.0, tov: 0.8, gp: 65, searchName: 'Watson'         },
-    { name: 'Zeke Nnaji',               position: 'C',  mpg: 17.3, ppg:  6.5, apg:  0.9, rpg:  4.2, stl: 0.5, blk: 0.5, fga:  5.8, fgm:  2.9, fta: 1.6, ftm: 1.2, tov: 0.7, gp: 58, searchName: 'Nnaji'         },
+    // Force-inject the core Nuggets — BDL's global stats feed historically under-reports Denver.
+    // KCP (left Denver), Russell Westbrook (left Denver), and MPJ (long-term injury) removed.
+    // Current rotation filled by live BDL data: Cameron Johnson, Tim Hardaway Jr., Jonas Valanciunas.
+    { name: 'Nikola Jokic',    position: 'C',  mpg: 34.9, ppg: 29.6, apg: 10.2, rpg: 13.0, stl: 1.4, blk: 1.0, fga: 17.4, fgm: 11.3, fta: 6.2, ftm: 5.2, tov: 3.7, gp: 79, searchName: 'Jokic'   },
+    { name: 'Jamal Murray',    position: 'PG', mpg: 35.4, ppg: 25.4, apg:  5.9, rpg:  4.4, stl: 1.0, blk: 0.3, fga: 17.5, fgm:  9.0, fta: 4.6, ftm: 4.0, tov: 2.5, gp: 75, searchName: 'Murray'  },
+    { name: 'Aaron Gordon',    position: 'PF', mpg: 31.4, ppg: 16.2, apg:  3.7, rpg:  6.8, stl: 1.0, blk: 0.7, fga: 11.0, fgm:  6.0, fta: 3.0, ftm: 2.3, tov: 1.7, gp: 72, searchName: 'Gordon'  },
+    { name: 'Christian Braun', position: 'SG', mpg: 30.5, ppg: 15.4, apg:  2.5, rpg:  4.0, stl: 0.9, blk: 0.4, fga: 10.2, fgm:  4.9, fta: 2.5, ftm: 2.0, tov: 1.0, gp: 71, searchName: 'Braun'   },
+    { name: 'Peyton Watson',   position: 'SF', mpg: 20.8, ppg:  7.6, apg:  1.2, rpg:  3.9, stl: 0.8, blk: 0.7, fga:  6.2, fgm:  2.9, fta: 1.4, ftm: 1.0, tov: 0.8, gp: 65, searchName: 'Watson'  },
+    { name: 'Zeke Nnaji',      position: 'C',  mpg: 17.3, ppg:  6.5, apg:  0.9, rpg:  4.2, stl: 0.5, blk: 0.5, fga:  5.8, fgm:  2.9, fta: 1.6, ftm: 1.2, tov: 0.7, gp: 58, searchName: 'Nnaji'   },
   ],
 };
 

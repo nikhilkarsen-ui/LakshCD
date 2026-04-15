@@ -6,7 +6,7 @@ INSERT INTO players (name, team, position, current_price, previous_price, expect
 VALUES
   ('LeBron James','Los Angeles Lakers','SF',284.52,282.30,720.50,25.8,8.3,7.5,28.1,60, 17584.27, 5003482.56),
   ('Stephen Curry','Golden State Warriors','PG',312.18,310.00,680.30,27.1,5.2,4.8,26.4,58, 16017.04, 5000039.95),
-  ('Kevin Durant','Houston Rockets','PF',298.67,296.50,750.20,28.3,5.0,6.7,29.8,55, 16740.83, 5000863.85),
+  ('Kevin Durant','Houston Rockets','PF',298.67,296.50,750.20,28.3,5.0,6.7,29.8,75, 16740.83, 5000863.85),
   ('Giannis Antetokounmpo','Milwaukee Bucks','PF',325.43,323.10,810.70,30.2,5.8,11.5,32.1,62, 15364.06, 4999996.48),
   ('Luka Dončić','Los Angeles Lakers','PG',289.91,287.60,790.40,29.5,9.1,8.8,30.5,57, 17242.59, 4999937.07),
   ('Ja Morant','Memphis Grizzlies','PG',245.30,243.80,620.10,24.8,8.1,5.3,23.9,52, 20383.20, 4999998.96),
@@ -19,6 +19,11 @@ VALUES
   ('Jalen Brunson','New York Knicks','PG',285.60,283.80,730.20,28.7,6.7,3.5,26.0,63, 17517.86, 5003101.10),
   ('Joel Embiid','Philadelphia 76ers','C',310.20,308.00,830.40,33.1,5.7,11.0,35.5,39, 16118.96, 5000494.91),
   ('Trae Young','Washington Wizards','PG',262.15,260.50,640.70,25.7,10.8,3.0,23.4,61, 19073.01, 4999982.47);
+-- NOTE: seed.sql is only used for cold-start dev. Run /api/admin/rebuild-players for production data.
+-- KD → Houston Rockets (7-team trade July 2025 from Phoenix Suns) ✓
+-- Luka → LA Lakers (traded from Dallas mid 2024-25) ✓
+-- Trae Young → Washington Wizards (traded from Atlanta January 7, 2026) ✓
+-- Jrue Holiday → Portland Trail Blazers (traded from Boston June 2025) — not in seed, fine
 
 -- Generate 24hr price history
 DO $$
