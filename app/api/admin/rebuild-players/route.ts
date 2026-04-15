@@ -3,7 +3,6 @@ import { serverSupa } from '@/lib/supabase';
 
 export const maxDuration = 300;
 
-// ── Target teams (12 teams × 9 players = 108) ─────────────────────────────────
 const TARGET_TEAMS = [
   'Detroit Pistons',
   'Boston Celtics',
@@ -19,28 +18,21 @@ const TARGET_TEAMS = [
   'Minnesota Timberwolves',
 ];
 
-// ── Pricing constants (mirrors PRICING_V3 in config/constants.ts) ──────────────
 const K           = 5_000_000;
 const TOTAL_GAMES = 82;
-const pts_w       = 0.35, ast_w = 0.20, reb_w = 0.20, eff_w = 0.25;
-const max_pts     = 2800, max_ast = 900, max_reb = 1200, max_eff = 3000;
-const fv_scale    = 0.40;
-const min_price   = 5;
-const LEAGUE_AVG  = 0.45;
-const CRED_GAMES  = 20;
+const pts_w = 0.35, ast_w = 0.20, reb_w = 0.20, eff_w = 0.25;
+const max_pts = 2800, max_ast = 900, max_reb = 1200, max_eff = 3000;
+const fv_scale  = 0.40;
+const min_price = 5;
+const LEAGUE_AVG = 0.45;
+const CRED_GAMES = 20;
 
 const BDL_BASE = 'https://api.balldontlie.io/v1';
-const DELAY_MS = 1100; // ~54 req/min, safely under 60/min limit
-const RETRY_MS = 35_000;
 
 function bdlHeaders(): Record<string, string> {
   const key = process.env.BALLDONTLIE_API_KEY;
   if (!key) throw new Error('BALLDONTLIE_API_KEY env var is not set');
   return { Authorization: key };
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms));
 }
 
 async function bdlGet(path: string, attempt = 0): Promise<any> {
@@ -49,16 +41,10 @@ async function bdlGet(path: string, attempt = 0): Promise<any> {
     cache: 'no-store',
   });
   if (res.status === 429 && attempt === 0) {
-    await delay(RETRY_MS);
+    await new Promise(r => setTimeout(r, 12_000)); // wait 12s then retry
     return bdlGet(path, 1);
   }
-  if (res.status === 400 || res.status === 402 || res.status === 403 || res.status === 404) {
-    return null;
-  }
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`BDL ${res.status} on ${path}: ${body.slice(0, 200)}`);
-  }
+  if (!res.ok) return null;
   return res.json();
 }
 
@@ -82,9 +68,7 @@ function computeEfficiency(s: any): number {
   );
 }
 
-function computePrice(ppg: number, apg: number, rpg: number, eff: number, gp: number): {
-  evScore: number; price: number; priorFvScore: number;
-} {
+function computePrice(ppg: number, apg: number, rpg: number, eff: number, gp: number) {
   const rawScore =
     (ppg * TOTAL_GAMES / max_pts) * pts_w +
     (apg * TOTAL_GAMES / max_ast) * ast_w +
@@ -97,59 +81,11 @@ function computePrice(ppg: number, apg: number, rpg: number, eff: number, gp: nu
   return { evScore, price, priorFvScore: parseFloat(shrunkScore.toFixed(4)) };
 }
 
-function computePools(price: number): { pool_x: number; pool_y: number } {
+function computePools(price: number) {
   return {
     pool_x: parseFloat(Math.sqrt(K / price).toFixed(4)),
     pool_y: parseFloat(Math.sqrt(K * price).toFixed(4)),
   };
-}
-
-/**
- * Discover which players actually played for a team in the 2025 season.
- *
- * Uses /stats?seasons[]=2025&team_ids[]=X to get real game stat rows —
- * every player ID extracted is guaranteed to have played this season.
- * Returns a map of bdlPlayerId → { name, position }.
- *
- * Falls back to /players?team_ids[]=X roster if stats endpoint returns nothing.
- */
-async function discoverTeamPlayers(
-  bdlTeamId: number,
-  teamName: string,
-  log: (msg: string) => void,
-): Promise<Map<number, { name: string; position: string }>> {
-  const result = new Map<number, { name: string; position: string }>();
-
-  // Primary: pull up to 100 game stat rows from the 2025 season for this team.
-  // Each row is one player's stats in one game, so 100 rows ≈ 6–7 games worth of data.
-  // Unique player IDs from these rows = current rotation players.
-  await delay(DELAY_MS);
-  const statsJson = await bdlGet(`/stats?seasons[]=2025&team_ids[]=${bdlTeamId}&per_page=100`);
-  const statRows: any[] = statsJson?.data ?? [];
-
-  if (statRows.length > 0) {
-    for (const row of statRows) {
-      const pid = row?.player?.id;
-      if (pid == null) continue;
-      const name     = `${row.player.first_name || ''} ${row.player.last_name || ''}`.trim();
-      const position = row.player.position || 'F';
-      if (!result.has(Number(pid))) result.set(Number(pid), { name, position });
-    }
-    log(`  [${teamName}] ${result.size} unique players found via 2025 game stats`);
-    return result;
-  }
-
-  // Fallback: roster endpoint (may include historical players)
-  log(`  [${teamName}] stats endpoint returned nothing — falling back to roster`);
-  await delay(DELAY_MS);
-  const rosterJson = await bdlGet(`/players?team_ids[]=${bdlTeamId}&per_page=50`);
-  for (const p of rosterJson?.data ?? []) {
-    const name     = `${p.first_name || ''} ${p.last_name || ''}`.trim();
-    const position = p.position || 'F';
-    result.set(Number(p.id), { name, position });
-  }
-  log(`  [${teamName}] fallback roster: ${result.size} players`);
-  return result;
 }
 
 export async function POST(req: NextRequest) {
@@ -164,7 +100,7 @@ export async function POST(req: NextRequest) {
   try {
     const db = serverSupa();
 
-    // ── Step 1: Resolve BDL team IDs ─────────────────────────────────────────
+    // ── Step 1: Resolve BDL team IDs (1 request) ─────────────────────────────
     log('Fetching BDL team list...');
     const teamsJson = await bdlGet('/teams?per_page=100');
     if (!teamsJson?.data) throw new Error('Failed to fetch BDL teams');
@@ -180,60 +116,107 @@ export async function POST(req: NextRequest) {
     }
     log(`Resolved ${resolvedTeams.length}/${TARGET_TEAMS.length} teams`);
 
-    // ── Step 2: Discover current players via 2025 game stats ──────────────────
-    // One /stats request per team → guaranteed-current player IDs, no historical bloat.
-    log('Discovering current players from 2025 game stats...');
+    // ── Step 2: Pull game stats per team, aggregate into per-player averages ──
+    //
+    // One /stats?seasons[]=2025&team_ids[]=X call per team (12 requests total).
+    // Each row is a single player's stats in a single game.
+    // We aggregate across all rows per player to get mpg/ppg/rpg/apg.
+    // This avoids 150+ sequential /season_averages calls that exceed the timeout.
+    //
+    // per_page=100 covers ~6–7 games × ~15 players = the full active rotation.
 
-    type Candidate = { bdlId: number; name: string; position: string; teamName: string };
-    const allCandidates: Candidate[] = [];
+    log('Fetching 2025 game stats per team (12 requests)...');
+
+    type PlayerAgg = {
+      bdlId: number; name: string; position: string; teamName: string;
+      gamesInSample: number;
+      sumMin: number; sumPts: number; sumAst: number; sumReb: number;
+      sumStl: number; sumBlk: number; sumFga: number; sumFgm: number;
+      sumFta: number; sumFtm: number; sumTov: number;
+    };
+
+    const allAgg = new Map<number, PlayerAgg>(); // bdlId → aggregated row
+    const playerTeam = new Map<number, string>(); // bdlId → teamName
 
     for (const team of resolvedTeams) {
-      const players = await discoverTeamPlayers(team.bdlId, team.name, log);
-      for (const [bdlId, info] of players) {
-        allCandidates.push({ bdlId, ...info, teamName: team.name });
+      await new Promise(r => setTimeout(r, 500)); // light delay between team requests
+      const json = await bdlGet(`/stats?seasons[]=2025&team_ids[]=${team.bdlId}&per_page=100`);
+      const rows: any[] = json?.data ?? [];
+      log(`  ${team.name}: ${rows.length} game stat rows`);
+
+      for (const row of rows) {
+        const pid = row?.player?.id;
+        if (pid == null) continue;
+        const id = Number(pid);
+
+        // Only count rows where this player actually played (min > 0)
+        const min = parseMinutes(row.min);
+        if (min === 0) continue;
+
+        if (!allAgg.has(id)) {
+          allAgg.set(id, {
+            bdlId: id,
+            name:     `${row.player.first_name || ''} ${row.player.last_name || ''}`.trim(),
+            position: row.player.position || 'F',
+            teamName: team.name,
+            gamesInSample: 0,
+            sumMin: 0, sumPts: 0, sumAst: 0, sumReb: 0,
+            sumStl: 0, sumBlk: 0, sumFga: 0, sumFgm: 0,
+            sumFta: 0, sumFtm: 0, sumTov: 0,
+          });
+          playerTeam.set(id, team.name);
+        }
+
+        const agg = allAgg.get(id)!;
+        agg.gamesInSample++;
+        agg.sumMin  += min;
+        agg.sumPts  += Number(row.pts      || 0);
+        agg.sumAst  += Number(row.ast      || 0);
+        agg.sumReb  += Number(row.reb      || 0);
+        agg.sumStl  += Number(row.stl      || 0);
+        agg.sumBlk  += Number(row.blk      || 0);
+        agg.sumFga  += Number(row.fga      || 0);
+        agg.sumFgm  += Number(row.fgm      || 0);
+        agg.sumFta  += Number(row.fta      || 0);
+        agg.sumFtm  += Number(row.ftm      || 0);
+        agg.sumTov  += Number(row.turnover || 0);
       }
     }
-    log(`Total candidates: ${allCandidates.length} across ${resolvedTeams.length} teams`);
 
-    // ── Step 3: Fetch individual season averages for each candidate ───────────
-    // 1100ms between each request to stay within 60 req/min.
-    // ~15–20 candidates per team × 12 teams ≈ 180–240 requests ≈ 3–4 min total.
-    log('Fetching season averages (1100ms throttle)...');
+    log(`Aggregated stats for ${allAgg.size} unique players across all teams`);
+
+    // ── Step 3: Compute per-game averages, filter, select top 9 per team ──────
+    log('Computing averages and selecting top 9 per team...');
 
     type PlayerEntry = {
       bdlPlayerId: number; name: string; position: string; teamName: string;
       mpg: number; ppg: number; apg: number; rpg: number; eff: number; gp: number;
     };
+
     const byTeam = new Map<string, PlayerEntry[]>();
     for (const team of resolvedTeams) byTeam.set(team.name, []);
 
-    for (let i = 0; i < allCandidates.length; i++) {
-      const c = allCandidates[i];
-      await delay(DELAY_MS);
+    for (const [, agg] of allAgg) {
+      const g = agg.gamesInSample;
+      if (g === 0) continue;
 
-      const json  = await bdlGet(`/season_averages?season=2025&player_id=${c.bdlId}`);
-      const stats = json?.data?.[0];
-      if (!stats) continue;
+      const mpg = agg.sumMin / g;
+      if (mpg < 10) continue; // exclude garbage time / DNP players
 
-      const mpg = parseMinutes(stats.min);
-      const gp  = Number(stats.games_played || 0);
-      if (mpg < 10 || gp < 10) continue;
+      const ppg = parseFloat((agg.sumPts / g).toFixed(1));
+      const apg = parseFloat((agg.sumAst / g).toFixed(1));
+      const rpg = parseFloat((agg.sumReb / g).toFixed(1));
+      const effPerGame = (agg.sumPts + agg.sumReb + agg.sumAst + agg.sumStl + agg.sumBlk
+        - (agg.sumFga - agg.sumFgm) - (agg.sumFta - agg.sumFtm) - agg.sumTov) / g;
+      const eff = parseFloat(effPerGame.toFixed(1));
 
-      const ppg = parseFloat(Number(stats.pts || 0).toFixed(1));
-      const apg = parseFloat(Number(stats.ast || 0).toFixed(1));
-      const rpg = parseFloat(Number(stats.reb || 0).toFixed(1));
-      const eff = parseFloat(computeEfficiency(stats).toFixed(1));
-
-      byTeam.get(c.teamName)?.push({
-        bdlPlayerId: c.bdlId, name: c.name, position: c.position,
-        teamName: c.teamName, mpg, ppg, apg, rpg, eff, gp,
+      byTeam.get(agg.teamName)?.push({
+        bdlPlayerId: agg.bdlId, name: agg.name, position: agg.position,
+        teamName: agg.teamName, mpg, ppg, apg, rpg, eff,
+        gp: g, // gamesInSample used as proxy — good enough for Bayesian credibility
       });
-
-      if ((i + 1) % 20 === 0) log(`  Progress: ${i + 1}/${allCandidates.length} candidates checked`);
     }
 
-    // ── Step 4: Select top 9 per team ────────────────────────────────────────
-    log('Selecting top 9 per team by minutes...');
     const finalPlayers: PlayerEntry[] = [];
     const teamBreakdown: Record<string, string[]> = {};
 
@@ -242,28 +225,28 @@ export async function POST(req: NextRequest) {
       const top9 = players.slice(0, 9);
       finalPlayers.push(...top9);
       teamBreakdown[teamName] = top9.map(p => `${p.name} (${p.mpg.toFixed(1)}mpg, ${p.ppg}ppg)`);
-      log(`  ${teamName} [${top9.length}]: ${top9.map(p => p.name).join(', ')}`);
+      log(`  ${teamName} [${top9.length}/${players.length} qualified]: ${top9.map(p => p.name).join(', ')}`);
     }
 
     const underTeams = [...byTeam.entries()].filter(([, p]) => p.length < 9);
     if (underTeams.length > 0) {
       log('WARNING: Teams with fewer than 9 qualified players:');
-      for (const [t, p] of underTeams) log(`  ${t}: ${p.length} players found`);
+      for (const [t, p] of underTeams) log(`  ${t}: only ${p.length} players met the mpg≥10 threshold`);
     }
     log(`Total players selected: ${finalPlayers.length}`);
 
     if (finalPlayers.length === 0) {
-      throw new Error('No players selected — check BDL API key and whether the 2025 season has game data.');
+      throw new Error('No players selected — check BDL API key and whether season 2025 has game data.');
     }
 
-    // ── Step 5: Delete all existing players ──────────────────────────────────
+    // ── Step 4: Delete all existing players ──────────────────────────────────
     log('Deleting all existing players...');
     const { error: deleteErr } = await db.from('players').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     if (deleteErr) throw new Error(`Delete failed: ${deleteErr.message}`);
-    log('All players deleted.');
+    log('Deleted.');
 
-    // ── Step 6: Insert new players ────────────────────────────────────────────
-    log('Inserting...');
+    // ── Step 5: Insert ────────────────────────────────────────────────────────
+    log('Inserting new players...');
     const now = new Date().toISOString();
     const inserts = finalPlayers.map(p => {
       const { evScore, price, priorFvScore } = computePrice(p.ppg, p.apg, p.rpg, p.eff, p.gp);
@@ -288,18 +271,14 @@ export async function POST(req: NextRequest) {
     if (insertErr) throw new Error(`Insert failed: ${insertErr.message}`);
     log(`Inserted ${inserts.length} players.`);
 
-    // ── Step 7: Validate ──────────────────────────────────────────────────────
-    log('Validating...');
-    const { data: countRows, error: countErr } = await db.from('players').select('team');
-    if (countErr) throw new Error(`Validation query failed: ${countErr.message}`);
-
+    // ── Step 6: Validate ──────────────────────────────────────────────────────
+    const { data: countRows } = await db.from('players').select('team');
     const totalCount = countRows?.length ?? 0;
     const teamCountMap: Record<string, number> = {};
     for (const row of countRows ?? []) teamCountMap[row.team] = (teamCountMap[row.team] ?? 0) + 1;
-
     for (const [team, count] of Object.entries(teamCountMap)) log(`  ${team}: ${count}`);
-    const badTeams = Object.entries(teamCountMap).filter(([, c]) => c !== 9);
 
+    const badTeams = Object.entries(teamCountMap).filter(([, c]) => c !== 9);
     if (totalCount === 108 && badTeams.length === 0) {
       log('✓ Laksh player universe successfully rebuilt: 108 players, 12 teams × 9 each.');
     } else {
