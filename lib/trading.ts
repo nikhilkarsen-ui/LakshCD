@@ -149,11 +149,14 @@ async function executeBuy(userId: string, req: TradeRequest, ip: string | null =
   );
 
   // 12. Trade record (include IP for sybil audit trail)
+  const feeCharged = parseFloat((dollars * feeRate).toFixed(4));
   const { data: trade } = await db.from('trades').insert({
     user_id: userId, player_id: req.player_id, side: 'buy',
     shares: sharesActual,
     price: parseFloat(effPrice.toFixed(4)),
     total_value: parseFloat(dollars.toFixed(2)),
+    fee_rate: parseFloat(feeRate.toFixed(6)),
+    fee_charged: feeCharged,
     realized_pnl: 0,
     ...(ip ? { trade_ip: ip } : {}),
   }).select().single();
@@ -327,11 +330,14 @@ async function executeSell(userId: string, req: TradeRequest, ip: string | null 
   }
 
   // 9. Trade record
+  const sellFeeCharged = parseFloat((usdOut * feeRate).toFixed(4));
   const { data: trade } = await db.from('trades').insert({
     user_id: userId, player_id: req.player_id, side: 'sell',
     shares: actualSold,
     price: parseFloat(effPrice.toFixed(4)),
     total_value: parseFloat(usdOut.toFixed(2)),
+    fee_rate: parseFloat(feeRate.toFixed(6)),
+    fee_charged: sellFeeCharged,
     realized_pnl: realizedPnl,
     ...(ip ? { trade_ip: ip } : {}),
   }).select().single();

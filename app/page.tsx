@@ -2,6 +2,60 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthProvider, useAuth, usePlayers, usePriceTicker, usePortfolio, useCountdown } from '@/hooks';
+
+// ── Session analytics ─────────────────────────────────────────────────────────
+// Tracks session start/end and page views for the admin metrics dashboard.
+// Fire-and-forget: errors are swallowed so analytics never breaks the UI.
+function useAnalytics(token: string | null, tab: string, isApproved: boolean) {
+  const sessionId = useRef<string | null>(null);
+  const startTime = useRef<number>(0);
+  const lastTab   = useRef<string>('');
+
+  const emit = useCallback((body: object) => {
+    if (!token) return;
+    fetch('/api/analytics/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  }, [token]);
+
+  // Session start — fires once when approved user is present
+  useEffect(() => {
+    if (!token || !isApproved) return;
+    const id = crypto.randomUUID();
+    sessionId.current = id;
+    startTime.current = Date.now();
+    emit({ session_id: id, event: 'start' });
+
+    // Session end on tab close / background
+    const end = () => {
+      const dur = Math.round((Date.now() - startTime.current) / 1000);
+      const body = JSON.stringify({ session_id: id, event: 'end', duration_seconds: dur });
+      // sendBeacon is more reliable on page unload
+      if (navigator.sendBeacon) {
+        const blob = new Blob([body], { type: 'application/json' });
+        navigator.sendBeacon(`/api/analytics/event?token=${encodeURIComponent(token)}`, blob);
+      }
+    };
+
+    const onVisibility = () => { if (document.visibilityState === 'hidden') end(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('beforeunload', end);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('beforeunload', end);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, isApproved]);
+
+  // Page view — fires when tab changes
+  useEffect(() => {
+    if (!token || !isApproved || !sessionId.current || tab === lastTab.current) return;
+    lastTab.current = tab;
+    emit({ session_id: sessionId.current, event: 'page_view', page: tab });
+  }, [tab, token, isApproved, emit]);
+}
 import { Player } from '@/types';
 import AuthForm from '@/components/AuthForm';
 import WaitlistForm from '@/components/WaitlistForm';
@@ -368,6 +422,8 @@ function Shell() {
     checkApproval();
     return () => { active = false; };
   }, [user, session?.access_token, router]);
+
+  useAnalytics(session?.access_token ?? null, tab, approvalState === 'approved');
 
   const selectPlayer = useCallback((p: Player) => { setPid(p.id); setTab('home'); }, []);
   const back = useCallback(() => setPid(null), []);
