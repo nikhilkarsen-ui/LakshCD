@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
     const allAgg = new Map<number, PlayerAgg>();
     let cursor: number | null = null;
     let page = 0;
-    const MAX_PAGES = 30; // 30 pages × 100 rows = 3,000 stat rows ≈ 2–3 months of games
+    const MAX_PAGES = 60; // 60 pages × 100 rows = 6,000 stat rows ≈ full season
 
     do {
       await new Promise(r => setTimeout(r, 800));
@@ -215,6 +215,73 @@ export async function POST(req: NextRequest) {
 
     log(`Pagination complete. ${allAgg.size} unique players across target teams.`);
 
+    // ── Step 2b: Fallback for teams still short after pagination ─────────────
+    // For any team with <9 qualifying players, fetch their roster then check
+    // individual season_averages (1100ms throttle, max 15 per team).
+    // This handles teams whose BDL team_id doesn't appear in the stats feed
+    // (e.g. Denver) or teams that need more pages than the cap allows.
+    const shortTeams = resolvedTeams.filter(team => {
+      let count = 0;
+      for (const agg of allAgg.values()) {
+        if (agg.teamName !== team.name) continue;
+        const mpg = agg.gamesInSample > 0 ? agg.sumMin / agg.gamesInSample : 0;
+        if (mpg >= MIN_MPG && agg.gamesInSample >= 1) count++;
+      }
+      return count < 9;
+    });
+
+    if (shortTeams.length > 0) {
+      log(`Running individual fallback for ${shortTeams.length} short team(s): ${shortTeams.map(t => t.name).join(', ')}`);
+
+      for (const team of shortTeams) {
+        // Get roster
+        await new Promise(r => setTimeout(r, 1100));
+        const rosterJson = await bdlGet(`/players?team_ids[]=${team.bdlId}&per_page=25`);
+        const roster: any[] = rosterJson?.data ?? [];
+        log(`  [${team.name}] roster: ${roster.length} players — checking individual season averages`);
+
+        for (const p of roster.slice(0, 20)) {
+          await new Promise(r => setTimeout(r, 1100));
+          const avgJson = await bdlGet(`/season_averages?season=2025&player_id=${p.id}`);
+          const stats   = avgJson?.data?.[0];
+          if (!stats) continue;
+
+          const min = parseMinutes(stats.min);
+          const gp  = Number(stats.games_played || 0);
+          if (min < MIN_MPG || gp < 1) continue;
+
+          const pid = Number(p.id);
+          if (allAgg.has(pid)) continue; // already found via stats feed
+
+          allAgg.set(pid, {
+            bdlId:    pid,
+            name:     `${p.first_name || ''} ${p.last_name || ''}`.trim(),
+            position: p.position || 'F',
+            teamName: team.name,
+            gamesInSample: gp,
+            sumMin:  min  * gp,
+            sumPts:  Number(stats.pts       || 0) * gp,
+            sumAst:  Number(stats.ast       || 0) * gp,
+            sumReb:  Number(stats.reb       || 0) * gp,
+            sumStl:  Number(stats.stl       || 0) * gp,
+            sumBlk:  Number(stats.blk       || 0) * gp,
+            sumFga:  Number(stats.fga       || 0) * gp,
+            sumFgm:  Number(stats.fgm       || 0) * gp,
+            sumFta:  Number(stats.fta       || 0) * gp,
+            sumFtm:  Number(stats.ftm       || 0) * gp,
+            sumTov:  Number(stats.turnover  || 0) * gp,
+          });
+        }
+
+        const nowCount = [...allAgg.values()].filter(a => {
+          if (a.teamName !== team.name) return false;
+          const mpg = a.gamesInSample > 0 ? a.sumMin / a.gamesInSample : 0;
+          return mpg >= MIN_MPG;
+        }).length;
+        log(`  [${team.name}] after fallback: ${nowCount} qualified players`);
+      }
+    }
+
     // ── Step 3: Compute averages, filter, select top 9 per team ──────────────
     log('Selecting top 9 per team by minutes per game...');
 
@@ -228,7 +295,7 @@ export async function POST(req: NextRequest) {
 
     for (const agg of allAgg.values()) {
       const g = agg.gamesInSample;
-      if (g < MIN_GAMES) continue;
+      if (g < 1) continue;
 
       const mpg = agg.sumMin / g;
       if (mpg < MIN_MPG) continue;
