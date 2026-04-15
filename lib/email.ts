@@ -57,7 +57,8 @@ export async function sendApprovalNotification(email: string) {
         <div style="font-family: system-ui, sans-serif; background: #020617; color: #f8fafc; padding: 24px; border-radius: 18px;">
           <h1 style="font-size: 1.5rem; margin-bottom: 16px;">Your Laksh beta access is approved</h1>
           <p style="font-size: 1rem; line-height: 1.6; margin-bottom: 16px;">Good news — your account has been approved for Laksh beta access.</p>
-          <p style="font-size: 1rem; line-height: 1.6; margin-bottom: 24px;">Sign in anytime to access the app and start using your portfolio tools.</p>
+          <p style="font-size: 1rem; line-height: 1.6; margin-bottom: 24px;">Sign in and start building your portfolio. You start with $10,000 in virtual cash.</p>
+          <a href="https://laksh.app" style="display: inline-block; background: #6ee7b7; color: #020617; font-weight: 600; font-size: 0.95rem; text-decoration: none; padding: 12px 28px; border-radius: 999px; margin-bottom: 24px;">Go to Laksh →</a>
           <p style="font-size: 0.95rem; color: #94a3b8;">— Laksh</p>
         </div>
       `,
