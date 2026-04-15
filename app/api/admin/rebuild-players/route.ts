@@ -43,31 +43,31 @@ const FORCED_ADDITIONS: Record<string, Array<{
   searchName: string; // last name (or "First Last") passed to /players?search=
 }>> = {
   'Boston Celtics': [
-    { name: 'Jayson Tatum',  position: 'SF', mpg: 35.5, ppg: 30.2, apg: 5.1, rpg: 8.5, stl: 1.0, blk: 0.6, fga: 19.0, fgm: 10.0, fta: 7.5, ftm: 6.3, tov: 2.8, gp: 42, searchName: 'Tatum'  },
-    { name: 'Jrue Holiday',  position: 'SG', mpg: 30.5, ppg: 12.5, apg: 4.8, rpg: 5.1, stl: 1.6, blk: 0.4, fga: 10.2, fgm:  4.8, fta: 3.1, ftm: 2.5, tov: 2.0, gp: 58, searchName: 'Holiday' },
+    { name: 'Jayson Tatum',             position: 'SF', mpg: 35.5, ppg: 30.2, apg: 5.1, rpg: 8.5, stl: 1.0, blk: 0.6, fga: 19.0, fgm: 10.0, fta: 7.5, ftm: 6.3, tov: 2.8, gp: 42, searchName: 'Tatum'     },
+    { name: 'Jrue Holiday',             position: 'SG', mpg: 30.5, ppg: 12.5, apg: 4.8, rpg: 5.1, stl: 1.6, blk: 0.4, fga: 10.2, fgm:  4.8, fta: 3.1, ftm: 2.5, tov: 2.0, gp: 58, searchName: 'Holiday'   },
+  ],
+  'Denver Nuggets': [
+    { name: 'Nikola Jokic',             position: 'C',  mpg: 34.9, ppg: 29.6, apg: 10.2, rpg: 13.0, stl: 1.4, blk: 1.0, fga: 17.4, fgm: 11.3, fta: 6.2, ftm: 5.2, tov: 3.7, gp: 79, searchName: 'Jokic'      },
+    { name: 'Jamal Murray',             position: 'PG', mpg: 34.1, ppg: 22.0, apg:  5.9, rpg:  4.4, stl: 1.0, blk: 0.3, fga: 16.9, fgm:  8.5, fta: 4.6, ftm: 4.0, tov: 2.5, gp: 60, searchName: 'Jamal Murray' },
+    { name: 'Michael Porter Jr.',       position: 'SF', mpg: 32.8, ppg: 17.0, apg:  1.7, rpg:  7.0, stl: 0.7, blk: 0.6, fga: 12.5, fgm:  6.4, fta: 2.5, ftm: 2.1, tov: 1.2, gp: 58, searchName: 'Michael Porter' },
+    { name: 'Aaron Gordon',             position: 'PF', mpg: 31.4, ppg: 14.2, apg:  3.7, rpg:  6.8, stl: 1.0, blk: 0.7, fga: 10.5, fgm:  5.7, fta: 3.0, ftm: 2.3, tov: 1.7, gp: 72, searchName: 'Aaron Gordon'  },
+    { name: 'Kentavious Caldwell-Pope', position: 'SG', mpg: 29.6, ppg: 12.8, apg:  2.3, rpg:  3.3, stl: 1.1, blk: 0.3, fga: 10.0, fgm:  4.8, fta: 1.8, ftm: 1.5, tov: 1.1, gp: 70, searchName: 'Caldwell-Pope' },
+    { name: 'Russell Westbrook',        position: 'PG', mpg: 26.0, ppg: 11.0, apg:  5.2, rpg:  5.0, stl: 1.2, blk: 0.3, fga: 10.8, fgm:  4.5, fta: 3.5, ftm: 2.6, tov: 2.8, gp: 55, searchName: 'Westbrook'    },
+    { name: 'Christian Braun',          position: 'SG', mpg: 24.5, ppg:  9.4, apg:  2.0, rpg:  3.8, stl: 0.9, blk: 0.4, fga:  7.8, fgm:  3.8, fta: 1.9, ftm: 1.5, tov: 1.0, gp: 71, searchName: 'Christian Braun' },
+    { name: 'Peyton Watson',            position: 'SF', mpg: 20.8, ppg:  7.6, apg:  1.2, rpg:  3.9, stl: 0.8, blk: 0.7, fga:  6.2, fgm:  2.9, fta: 1.4, ftm: 1.0, tov: 0.8, gp: 65, searchName: 'Peyton Watson'  },
+    { name: 'Zeke Nnaji',               position: 'C',  mpg: 17.3, ppg:  6.5, apg:  0.9, rpg:  4.2, stl: 0.5, blk: 0.5, fga:  5.8, fgm:  2.9, fta: 1.6, ftm: 1.2, tov: 0.7, gp: 58, searchName: 'Nnaji'         },
   ],
 };
 
-// Hardcoded fallback stats for teams whose BDL data is absent or incomplete.
-// Format: teamName → array of player stat rows (2024-25 season averages).
-// Only used when the live BDL feed + individual fallback still produces < 9 players.
+// Hardcoded fallback stats — only used when live BDL feed produces < 9 players
+// AND the team is not already covered by FORCED_ADDITIONS.
 const HARDCODED_TEAM_STATS: Record<string, Array<{
   name: string; position: string;
   mpg: number; ppg: number; apg: number; rpg: number;
   stl: number; blk: number; fga: number; fgm: number;
   fta: number; ftm: number; tov: number; gp: number;
 }>> = {
-  'Denver Nuggets': [
-    { name: 'Nikola Jokić',              position: 'C',  mpg: 34.9, ppg: 29.6, apg: 10.2, rpg: 13.0, stl: 1.4, blk: 1.0, fga: 17.4, fgm: 11.3, fta: 6.2, ftm: 5.2, tov: 3.7, gp: 79 },
-    { name: 'Jamal Murray',              position: 'PG', mpg: 34.1, ppg: 22.0, apg:  5.9, rpg:  4.4, stl: 1.0, blk: 0.3, fga: 16.9, fgm:  8.5, fta: 4.6, ftm: 4.0, tov: 2.5, gp: 60 },
-    { name: 'Michael Porter Jr.',        position: 'SF', mpg: 32.8, ppg: 17.0, apg:  1.7, rpg:  7.0, stl: 0.7, blk: 0.6, fga: 12.5, fgm:  6.4, fta: 2.5, ftm: 2.1, tov: 1.2, gp: 58 },
-    { name: 'Aaron Gordon',             position: 'PF', mpg: 31.4, ppg: 14.2, apg:  3.7, rpg:  6.8, stl: 1.0, blk: 0.7, fga: 10.5, fgm:  5.7, fta: 3.0, ftm: 2.3, tov: 1.7, gp: 72 },
-    { name: 'Kentavious Caldwell-Pope', position: 'SG', mpg: 29.6, ppg: 12.8, apg:  2.3, rpg:  3.3, stl: 1.1, blk: 0.3, fga: 10.0, fgm:  4.8, fta: 1.8, ftm: 1.5, tov: 1.1, gp: 70 },
-    { name: 'Russell Westbrook',        position: 'PG', mpg: 26.0, ppg: 11.0, apg:  5.2, rpg:  5.0, stl: 1.2, blk: 0.3, fga: 10.8, fgm:  4.5, fta: 3.5, ftm: 2.6, tov: 2.8, gp: 55 },
-    { name: 'Christian Braun',          position: 'SG', mpg: 24.5, ppg:  9.4, apg:  2.0, rpg:  3.8, stl: 0.9, blk: 0.4, fga:  7.8, fgm:  3.8, fta: 1.9, ftm: 1.5, tov: 1.0, gp: 71 },
-    { name: 'Peyton Watson',            position: 'SF', mpg: 20.8, ppg:  7.6, apg:  1.2, rpg:  3.9, stl: 0.8, blk: 0.7, fga:  6.2, fgm:  2.9, fta: 1.4, ftm: 1.0, tov: 0.8, gp: 65 },
-    { name: 'Zeke Nnaji',               position: 'C',  mpg: 17.3, ppg:  6.5, apg:  0.9, rpg:  4.2, stl: 0.5, blk: 0.5, fga:  5.8, fgm:  2.9, fta: 1.6, ftm: 1.2, tov: 0.7, gp: 58 },
-  ],
+  // Denver is now handled by FORCED_ADDITIONS above (gets real BDL IDs via search)
 };
 
 function bdlHeaders(): Record<string, string> {
