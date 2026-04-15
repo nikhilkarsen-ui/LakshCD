@@ -29,23 +29,32 @@ export async function GET() {
     let sparklines: Record<string, { price: number }[]> = {};
     if (players.length > 0) {
       const playerIds = players.map((p: any) => p.id);
+      // Fetch 24h of history (288 ticks at 5-min cadence) then downsample to
+      // 60 evenly-spaced points per player for the sparkline. Sending 288 × 108
+      // rows to the client is wasteful; 60 points is more than enough visual fidelity.
+      const SPARKLINE_POINTS = 60;
       const { data: hist } = await db
         .from('price_history')
         .select('player_id, price')
         .in('player_id', playerIds)
         .order('created_at', { ascending: false })
-        .limit(players.length * 30); // ~450 rows for 15 players
+        .limit(players.length * 288);
 
-      // Group by player, then reverse so oldest → newest
+      // Group by player (DESC → oldest last), then reverse to ASC and downsample
       const grouped: Record<string, { price: number }[]> = {};
       for (const row of (hist ?? [])) {
         if (!grouped[row.player_id]) grouped[row.player_id] = [];
         grouped[row.player_id].push({ price: Number(row.price) });
       }
       for (const id of Object.keys(grouped)) {
-        grouped[id].reverse(); // DESC→ASC
+        const asc = grouped[id].reverse(); // DESC→ASC
+        if (asc.length <= SPARKLINE_POINTS) { sparklines[id] = asc; continue; }
+        // Evenly sample SPARKLINE_POINTS from the full history, always including last point
+        const step = (asc.length - 1) / (SPARKLINE_POINTS - 1);
+        sparklines[id] = Array.from({ length: SPARKLINE_POINTS }, (_, i) =>
+          asc[Math.round(i * step)]
+        );
       }
-      sparklines = grouped;
     }
 
     return NextResponse.json({ players, market_cap: parseFloat(market_cap.toFixed(2)), sparklines });
