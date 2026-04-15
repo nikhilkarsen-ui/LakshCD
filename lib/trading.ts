@@ -388,6 +388,83 @@ async function executeSell(userId: string, req: TradeRequest, ip: string | null 
   return { success: true, trade, new_balance: newBal, realized_pnl: realizedPnl };
 }
 
+// ─── Pending order processor ─────────────────────────────────────────────────
+// Called by the price tick every 5s. Fills all pending orders at current
+// market prices. Orders expire after 30s if not processed (e.g. server restart).
+export async function processPendingOrders(): Promise<{ filled: number; expired: number; failed: number }> {
+  const db = serverSupa();
+  const now = new Date().toISOString();
+
+  // Expire stale orders first
+  await db
+    .from('pending_orders')
+    .update({ status: 'expired' })
+    .eq('status', 'pending')
+    .lt('expires_at', now);
+
+  // Fetch all still-pending orders, oldest first
+  const { data: orders } = await db
+    .from('pending_orders')
+    .select('*')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+    .limit(50);
+
+  if (!orders?.length) return { filled: 0, expired: 0, failed: 0 };
+
+  let filled = 0, failed = 0;
+
+  for (const order of orders) {
+    const req: TradeRequest = {
+      player_id: order.player_id,
+      side:      order.side as 'buy' | 'sell',
+      dollars:   Number(order.dollars),
+      sell_all:  order.sell_all,
+    };
+
+    if (Date.now() >= new Date(SEASON.settlement_date).getTime()) {
+      await db.from('pending_orders').update({ status: 'failed', error_message: 'Season settled' }).eq('id', order.id);
+      failed++;
+      continue;
+    }
+
+    try {
+      const result = order.side === 'buy'
+        ? await executeBuy(order.user_id, req, order.trade_ip)
+        : await executeSell(order.user_id, req, order.trade_ip);
+
+      if (result.success) {
+        const trade = (result as any).trade;
+        await db.from('pending_orders').update({
+          status:     'filled',
+          fill_price: (result as any).fill_price ?? trade?.price ?? null,
+          fill_shares: (result as any).fill_shares ?? trade?.shares ?? null,
+          filled_at:  new Date().toISOString(),
+        }).eq('id', order.id);
+        filled++;
+      } else {
+        await db.from('pending_orders').update({
+          status:        'failed',
+          error_message: result.error ?? 'Unknown error',
+        }).eq('id', order.id);
+        failed++;
+      }
+    } catch (e: any) {
+      await db.from('pending_orders').update({
+        status:        'failed',
+        error_message: e.message ?? 'Internal error',
+      }).eq('id', order.id);
+      failed++;
+    }
+  }
+
+  if (filled || failed) {
+    console.log(`PENDING ORDERS: filled=${filled} failed=${failed}`);
+  }
+
+  return { filled, expired: 0, failed };
+}
+
 // ─── Public executor ─────────────────────────────────────────────────────────
 export async function executeTrade(userId: string, req: TradeRequest, ip: string | null = null) {
   if (Date.now() >= new Date(SEASON.settlement_date).getTime())
@@ -700,7 +777,7 @@ export async function executePoolWithdrawal(userId: string) {
     await db.from('trades').insert({
       user_id:      userId,
       player_id:    pos.player_id,
-      side:         'withdrawal',
+      side:         'settlement',
       shares,
       price,
       total_value:  parseFloat(proceeds.toFixed(2)),

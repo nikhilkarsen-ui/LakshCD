@@ -29,9 +29,7 @@
 // ============================================================
 
 import { serverSupa } from './supabase';
-import { LIVE_STATS } from '@/config/constants';
-
-const BOOST_TTL_MS  = 4 * 60 * 60 * 1000; // reset boost 4h after last game event
+import { LIVE_STATS, BOOST_TTL_MS } from '@/config/constants';
 const MAX_PRICE_BUMP = 0.05;               // single-sync price move capped at ±5%
 
 // NBA Efficiency = PTS + REB + AST + STL + BLK − (FGA−FGM) − (FTA−FTM) − TOV

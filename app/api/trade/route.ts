@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApprovedAppUser, unauth } from '@/lib/auth';
-import { executeTrade } from '@/lib/trading';
+import { serverSupa } from '@/lib/supabase';
+import { SEASON } from '@/config/constants';
 
 function getClientIp(req: NextRequest): string | null {
   return (
@@ -30,7 +31,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Need positive dollars (or sell_all: true)' }, { status: 400 });
   }
 
-  const result = await executeTrade(user.id, { player_id: body.player_id, side, dollars: dollars || 0, sell_all }, ip);
-  if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
-  return NextResponse.json(result);
+  if (Date.now() >= new Date(SEASON.settlement_date).getTime()) {
+    return NextResponse.json({ error: 'Season has settled — trading is closed.' }, { status: 400 });
+  }
+
+  const db = serverSupa();
+
+  // Verify player exists and is tradeable before queuing
+  const { data: player } = await db.from('players').select('id, settlement_status').eq('id', body.player_id).single();
+  if (!player) return NextResponse.json({ error: 'Player not found' }, { status: 404 });
+  if (player.settlement_status === 'settled') {
+    return NextResponse.json({ error: 'This player has already settled — trading is closed' }, { status: 400 });
+  }
+
+  // Queue the order — it will fill at the next price tick (~5s)
+  const expiresAt = new Date(Date.now() + 30_000).toISOString();
+  const { data: order, error } = await db.from('pending_orders').insert({
+    user_id:    user.id,
+    player_id:  body.player_id,
+    side,
+    dollars:    dollars || 0,
+    sell_all,
+    trade_ip:   ip,
+    expires_at: expiresAt,
+  }).select('id').single();
+
+  if (error) {
+    console.error('Failed to queue order:', error);
+    return NextResponse.json({ error: 'Failed to place order — please try again' }, { status: 500 });
+  }
+
+  return NextResponse.json({ pending: true, order_id: order.id });
 }

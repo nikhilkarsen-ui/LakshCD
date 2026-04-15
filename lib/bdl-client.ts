@@ -127,7 +127,8 @@ export async function bdlFetch(path: string, attempt = 0): Promise<any> {
 
 /** Today's NBA game schedule. Returns the raw BDL games array. */
 export async function fetchTodayGames(): Promise<any[]> {
-  const today = new Date().toISOString().slice(0, 10);
+  // NBA schedules are in ET — use ET date so this agrees with the schedule cache key
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const json  = await bdlFetch(`/games?dates[]=${today}&per_page=15`);
   return json?.data ?? [];
 }

@@ -5,83 +5,6 @@ export const SEASON = { settlement_date: '2026-06-15T00:00:00Z', total_games: 82
 
 export const TRADE = { initial_balance: 10000, min_amount: 1, max_amount: 50000, fee_rate: 0.002, max_slippage: 0.12, amm_k: 5_000_000 } as const;
 
-// ── Legacy pricing constants (kept for reference; v2 engine is live) ─────────
-export const PRICING = {
-  pts_w: 0.35, ast_w: 0.20, reb_w: 0.20, eff_w: 0.25,
-  max_pts: 2800, max_ast: 900, max_reb: 1200, max_eff: 3000,
-  efv_scale: 0.40,
-  drift_base: 0.018, drift_season_boost: 0.40,
-  momentum_w: 0.05, noise: 0.05, ema_alpha: 0.12,
-  trend_window: 20, max_tick: 0.03, live_boost_scale: 0.20,
-} as const;
-
-// ── Pricing Engine v2 ─────────────────────────────────────────────────────────
-export const PRICING_V2: Record<string, number> = {
-  // ── Fair Value Oracle ──────────────────────────────────────────────────────
-  pts_w: 0.35, ast_w: 0.20, reb_w: 0.20, eff_w: 0.25,
-  max_pts: 2800, max_ast: 900, max_reb: 1200, max_eff: 3000,
-  fv_scale: 0.40,           // EV score (0–1000) × fv_scale = fair value in dollars
-  min_price: 5,
-
-  // Bayesian shrinkage: regress toward league average before credibility_games games played.
-  // Prevents early-season overreaction to small samples.
-  credibility_games: 30,    // full credibility at 30 games
-  league_avg_score: 0.45,   // league-average normalised EV (≈ $180 FV)
-
-  // Live game boost: shifts FV target during/after active games
-  live_boost_scale: 0.20,   // max ±20% FV shift from live performance
-
-  // ── Virtual Market Depth ───────────────────────────────────────────────────
-  // Depth = virtual liquidity in USD. Higher depth = less price impact per dollar traded.
-  // This is the primary manipulation-resistance lever.
-  base_depth: 40_000,            // $40k virtual depth at season start
-  depth_season_boost: 2.5,       // grows to $140k by season end (more certainty = tighter)
-  depth_proximity_boost: 0.60,   // +60% depth bonus when price is at FV
-  depth_proximity_decay: 0.15,   // proximity bonus decays over 15% price deviation
-  depth_volume_base: 10_000,     // $10k/day = neutral volume reference
-  min_depth: 20_000,             // floor: never thinner than $20k virtual depth
-
-  // ── Nonlinear Slippage ────────────────────────────────────────────────────
-  // impact_frac = (tradeUSD / (depth + tradeUSD))^slippage_exponent
-  // exponent > 1 makes large trades disproportionately expensive (manipulation tax)
-  slippage_exponent: 1.5,
-  max_price_impact_per_trade: 0.08,  // hard cap: single trade ≤ 8% price move
-  max_fv_deviation: 0.30,            // price blocked if it would stray >30% from FV
-  fee_rate: 0.002,                   // 0.2% per trade
-
-  // ── Price Blend Weights (base) ────────────────────────────────────────────
-  // Final price = w_amm*AMM_spot + w_fv*FairValue + w_twap*TWAP
-  // Weights adjust dynamically — these are the neutral starting point.
-  w_amm_base:  0.40,
-  w_fv_base:   0.40,
-  w_twap_base: 0.20,
-
-  // ── Tick / Mean Reversion ─────────────────────────────────────────────────
-  drift_base: 0.020,             // 2% pull toward FV per tick at season start
-  drift_season_boost: 0.45,      // grows to 47% pull per tick at season end
-  // Extra convergence when price is far from FV (rubber-band effect)
-  deviation_boost_threshold: 0.10,   // kicks in beyond 10% deviation
-  deviation_boost_multiplier: 0.30,  // adds 30% × (excess deviation) to alpha
-
-  noise_scale: 0.030,            // Gaussian noise amplitude (fraction of vol × price)
-  noise_damp_decay: 0.20,        // noise dampens as price approaches FV
-  max_tick: 0.025,               // tick can move AMM spot at most 2.5%
-
-  // ── Dynamic Weight Adjustments ───────────────────────────────────────────
-  target_vol: 0.02,              // "normal" tick volatility baseline
-  idle_halflife_ms: 120_000,     // AMM weight decays with 2-min half-life when no trades
-  avg_daily_volume: 50_000,      // $50k/day = neutral volume for weight scaling
-
-  // ── Settlement Protection ────────────────────────────────────────────────
-  settlement_protection_hours: 72,  // impact caps tighten inside 72h of settlement
-  settlement_anchor_hours: 168,     // FV weight starts boosting inside 7 days
-  settlement_fv_boost: 0.35,        // FV weight gets up to +35% near settlement
-
-  // ── TWAP window ──────────────────────────────────────────────────────────
-  twap_window_ms: 5 * 60 * 1000,   // 5-minute TWAP
-  vol_window: 30,                   // ticks used for EWMA vol estimate
-};
-
 // ── Anti-Manipulation v2 ─────────────────────────────────────────────────────
 export const ANTI_MANIP = {
   // Directional pressure: penalise users who consistently push price one way
@@ -261,6 +184,9 @@ export const LIVE_STATS = {
 } as const;
 
 export const POLL = { prices: 5000, portfolio: 6000, leaderboard: 30000 } as const;
+
+// Live game boost TTL — resets live_game_boost this long after the last stat event.
+export const BOOST_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 // ── Parimutuel Pool ───────────────────────────────────────────────────────────
 // All user deposits flow into a shared pool. At settlement, the distribution

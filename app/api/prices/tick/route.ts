@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { serverSupa } from '@/lib/supabase';
 import { tick, noGameTick } from '@/lib/pricing-v3';
-import { runSettlement } from '@/lib/trading';
+import { runSettlement, processPendingOrders } from '@/lib/trading';
 import { getUser, getAppUser } from '@/lib/auth';
 import { Player, PricePoint } from '@/types';
 import { SEASON, PRICING_V3 as C } from '@/config/constants';
@@ -223,15 +223,18 @@ export async function POST(req: NextRequest) {
 
     if (inserts.length) await db.from('price_history').insert(inserts);
 
+    // ── Process pending orders at this tick's prices ──────────────────────────
+    // Orders placed via /api/trade are queued and filled here at current market
+    // prices — "fill at next mark". Closes the stat-sync front-running window.
+    const orders = await processPendingOrders();
+
     // ── Prune history older than 7 days (probabilistic — ~1% of ticks) ──────
-    // Running a DELETE on every 5s tick is wasteful. At 1% probability this
-    // fires roughly once every 500 ticks (~8 minutes), which is plenty.
     if (Math.random() < 0.01) {
       const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       await db.from('price_history').delete().lt('created_at', cutoff);
     }
 
-    return NextResponse.json({ success: true, ticks: players.length, timestamp: now });
+    return NextResponse.json({ success: true, ticks: players.length, orders, timestamp: now });
   } catch (e: any) {
     console.error('Tick error:', e);
     return NextResponse.json({ error: e.message }, { status: 500 });

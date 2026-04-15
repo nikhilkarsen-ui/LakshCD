@@ -43,7 +43,8 @@ export async function PATCH(req: NextRequest) {
   const id = typeof body.id === 'string' ? body.id : '';
   const action = body.action === 'approve' ? 'approved' : body.action === 'reject' ? 'rejected' : '';
 
-  if (!id || !action) {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!id || !UUID_RE.test(id) || !action) {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   }
 

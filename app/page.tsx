@@ -133,6 +133,9 @@ function LandingPage({ onStart }: { onStart: () => void }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <a href="/waitlist" className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10">
+                Join Waitlist
+              </a>
               <button onClick={onStart} className="rounded-full bg-lk-accent px-5 py-2.5 text-sm font-semibold text-black transition hover:brightness-110">
                 Sign In
               </button>
@@ -176,8 +179,7 @@ function LandingPage({ onStart }: { onStart: () => void }) {
                 </h1>
 
                 <p className="text-lg leading-8 text-lk-dim">
-                  A shared prize pool. NBA player shares. One season to outperform everyone else.
-                  Trade player shares, build the strongest portfolio, and claim your proportional payout when the season ends June 15.
+                  One shared prize pool. Build a portfolio of NBA players. Trade in real time and outperform everyone else. Get your share of the pool when the season ends June 15.
                 </p>
 
                 <div id="waitlist" className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 max-w-md">

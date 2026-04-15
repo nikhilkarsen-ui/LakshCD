@@ -83,11 +83,13 @@ export async function syncInjuries(): Promise<InjurySyncResult> {
 
   // Build a name → injury map from BDL response
   // BDL format: { player: { first_name, last_name }, status, description }
+  // Normalise diacritics so "Nikola Jokic" (BDL) matches "Nikola Jokić" (DB).
+  const stripDiacritics = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '');
   const byName = new Map<string, { status: InjuryStatus; description: string }>();
   for (const [, entry] of injuryMap) {
     const fullName = `${entry.player?.first_name ?? ''} ${entry.player?.last_name ?? ''}`.trim();
     if (fullName) {
-      byName.set(fullName.toLowerCase(), {
+      byName.set(stripDiacritics(fullName).toLowerCase(), {
         status:      normaliseStatus(entry.status),
         description: entry.description ?? '',
       });
@@ -107,7 +109,7 @@ export async function syncInjuries(): Promise<InjurySyncResult> {
   let cleared   = 0;
 
   for (const p of playerNames) {
-    const match = byName.get(p.name.toLowerCase());
+    const match = byName.get(stripDiacritics(p.name).toLowerCase());
 
     if (match) {
       // Player appears on the injury report

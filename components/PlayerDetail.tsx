@@ -202,7 +202,11 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
     const amt = parseFloat(dollars);
     if (!amt || amt <= 0 || !player) return;
     const result = await execute(player.id, amt, side);
-    if (result.success) {
+    if (result.pending) {
+      setToast({ msg: `Order placed — fills at next mark (~5s)`, type: 'ok' });
+      setDollars('');
+      setTimeout(refetch, 5500);
+    } else if (result.success) {
       setToast({ msg: `${side === 'buy' ? 'Bought' : 'Sold'} $${amt.toFixed(2)} of ${player.name}`, type: 'ok' });
       setDollars('');
       refetch();
@@ -214,7 +218,11 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
   const doSellAll = async () => {
     if (!player || !sharesOwned) return;
     const result = await execute(player.id, 0, 'sell', true);
-    if (result.success) {
+    if (result.pending) {
+      setToast({ msg: `Order placed — fills at next mark (~5s)`, type: 'ok' });
+      setDollars('');
+      setTimeout(refetch, 5500);
+    } else if (result.success) {
       setToast({ msg: `Sold all ${player.name} shares`, type: 'ok' });
       setDollars('');
       refetch();

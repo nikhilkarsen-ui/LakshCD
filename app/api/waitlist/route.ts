@@ -64,7 +64,6 @@ export async function POST(req: NextRequest) {
     await sendWaitlistConfirmation(email);
   } catch (sendError) {
     console.error('Waitlist confirmation email failed:', sendError);
-    return NextResponse.json({ error: 'Failed to send confirmation email.' }, { status: 500 });
   }
 
   try {
