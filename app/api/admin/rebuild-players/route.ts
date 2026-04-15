@@ -252,6 +252,10 @@ export async function POST(req: NextRequest) {
       return count < 9;
     });
 
+    // shortTeamRosters: teamName → Map<playerName, realBdlId>
+    // Populated in the fallback loop so Step 2c can assign real BDL IDs to hardcoded players.
+    const shortTeamRosters = new Map<string, Map<string, number>>();
+
     if (shortTeams.length > 0) {
       log(`Running individual fallback for ${shortTeams.length} short team(s): ${shortTeams.map(t => t.name).join(', ')}`);
 
@@ -261,6 +265,14 @@ export async function POST(req: NextRequest) {
         const rosterJson = await bdlGet(`/players?team_ids[]=${team.bdlId}&per_page=25`);
         const roster: any[] = rosterJson?.data ?? [];
         log(`  [${team.name}] roster: ${roster.length} players — checking individual season averages`);
+
+        // Save real BDL IDs by name regardless of whether stats exist
+        const nameToId = new Map<string, number>();
+        for (const p of roster) {
+          const fullName = `${p.first_name || ''} ${p.last_name || ''}`.trim();
+          nameToId.set(fullName, Number(p.id));
+        }
+        shortTeamRosters.set(team.name, nameToId);
 
         for (const p of roster.slice(0, 20)) {
           await new Promise(r => setTimeout(r, 1100));
@@ -319,18 +331,23 @@ export async function POST(req: NextRequest) {
 
       if (alreadyHave >= 9) continue; // live data is sufficient
 
-      log(`  [${team.name}] only ${alreadyHave} live players — injecting ${hardcoded.length} hardcoded entries`);
+      const rosterNameToId = shortTeamRosters.get(team.name) ?? new Map<string, number>();
+      log(`  [${team.name}] only ${alreadyHave} live players — injecting ${hardcoded.length} hardcoded entries (${rosterNameToId.size} real BDL IDs available)`);
 
-      // Use a synthetic negative bdlId to avoid collisions with real IDs
+      // Use a synthetic negative bdlId only as a last resort (no match in roster)
       let syntheticId = -1;
       for (const h of hardcoded) {
         // Don't duplicate names already collected
         const nameExists = [...allAgg.values()].some(a => a.teamName === team.name && a.name === h.name);
         if (nameExists) continue;
 
-        while (allAgg.has(syntheticId)) syntheticId--;
-        allAgg.set(syntheticId, {
-          bdlId:    syntheticId,
+        // Prefer the real BDL ID so the price cron can fetch live game data for this player
+        const realId = rosterNameToId.get(h.name);
+        const bdlId  = realId ?? (syntheticId--);
+        if (!realId) while (allAgg.has(syntheticId)) syntheticId--;
+
+        allAgg.set(realId ?? bdlId, {
+          bdlId:    realId ?? bdlId,
           name:     h.name,
           position: h.position,
           teamName: team.name,
