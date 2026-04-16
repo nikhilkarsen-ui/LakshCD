@@ -324,25 +324,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Fallback injections for players with no BDL stats ────────────────────
-    // Used when BDL resolves the player ID but has no season averages.
-    // Stats are approximate; real BDL data is preferred when available.
-    const FALLBACK_INJECTIONS: Record<string, PlayerEntry[]> = {
-      'Houston Rockets': [
-        // Jabari Smith Jr. — BDL has his ID but no current season stats
-        { bdlPlayerId: -1, name: 'Jabari Smith', position: 'PF', teamName: 'Houston Rockets', mpg: 27.0, ppg: 14.5, apg: 1.2, rpg: 7.4, eff: 12.8, gp: 62 },
-      ],
-    };
+    // ── Fallback stats for players BDL resolved but has no season averages ────
+    // The real bdlId is pulled from resolvedIds so live price syncs still work.
+    // Only injected if the player isn't already present from live data.
+    type StatFallback = { name: string; position: string; mpg: number; ppg: number; apg: number; rpg: number; eff: number; gp: number };
+    const STAT_FALLBACKS: StatFallback[] = [
+      // Jabari Smith Jr. — BDL ID resolves fine but no current season stats
+      { name: 'Jabari Smith', position: 'PF', mpg: 27.0, ppg: 14.5, apg: 1.2, rpg: 7.4, eff: 12.8, gp: 62 },
+    ];
 
-    for (const [teamName, fallbacks] of Object.entries(FALLBACK_INJECTIONS)) {
-      const arr = byTeam.get(teamName) ?? [];
-      for (const fb of fallbacks) {
-        if (!arr.some(p => p.name.toLowerCase() === fb.name.toLowerCase())) {
-          arr.push(fb);
-          log(`  [fallback] Injected ${fb.name} for ${teamName}`);
-        }
+    for (const fb of STAT_FALLBACKS) {
+      const resolved = resolvedIds.find(p => `${p.first} ${p.last}`.toLowerCase() === fb.name.toLowerCase());
+      if (!resolved) continue;
+      const arr = byTeam.get(resolved.teamName) ?? [];
+      if (!arr.some(p => p.name.toLowerCase() === fb.name.toLowerCase())) {
+        arr.push({ bdlPlayerId: resolved.bdlId, name: fb.name, position: fb.position, teamName: resolved.teamName, mpg: fb.mpg, ppg: fb.ppg, apg: fb.apg, rpg: fb.rpg, eff: fb.eff, gp: fb.gp });
+        byTeam.set(resolved.teamName, arr);
+        log(`  [fallback] Injected ${fb.name} (bdlId=${resolved.bdlId}) for ${resolved.teamName}`);
       }
-      byTeam.set(teamName, arr);
     }
 
     // Sort each team by MPG desc, take top 5
