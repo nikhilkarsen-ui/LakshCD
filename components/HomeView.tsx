@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo, memo } from 'react';
+import { useState, useMemo, memo, useRef } from 'react';
 import { Player } from '@/types';
 import { Sparkline } from './Sparkline';
 import { Card, Avatar, Label, Skel, fmtCompact, fmtPct } from './ui';
@@ -125,6 +125,11 @@ export default function HomeView({
 }) {
   const [q, setQ]           = useState('');
   const [teamFilter, setTeamFilter] = useState<string | null>(null);
+  const chipRowRef = useRef<HTMLDivElement>(null);
+
+  function scrollChips(dir: 'left' | 'right') {
+    chipRowRef.current?.scrollBy({ left: dir === 'right' ? 160 : -160, behavior: 'smooth' });
+  }
 
   // Derive sorted unique teams from the loaded player list
   const teams = useMemo(() => {
@@ -188,34 +193,60 @@ export default function HomeView({
 
       {/* Team filter chips */}
       {teams.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto px-4 pb-2 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex items-center gap-1 px-4 pb-2">
           <button
-            onClick={() => setTeamFilter(null)}
-            className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
-              !teamFilter
-                ? 'bg-lk-accent text-black border-lk-accent'
-                : 'bg-lk-card border-lk-border text-lk-dim hover:text-lk-text'
-            }`}
+            onClick={() => scrollChips('left')}
+            className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-lk-card border border-lk-border text-lk-dim hover:text-lk-text transition-colors"
+            aria-label="Scroll left"
           >
-            All
+            <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
           </button>
-          {teams.map(team => {
-            const abbrev = TEAM_ABBREVS[team] ?? team.split(' ').pop()?.slice(0, 3).toUpperCase() ?? team;
-            const active = teamFilter === team;
-            return (
-              <button
-                key={team}
-                onClick={() => setTeamFilter(active ? null : team)}
-                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
-                  active
-                    ? 'bg-lk-accent text-black border-lk-accent'
-                    : 'bg-lk-card border-lk-border text-lk-dim hover:text-lk-text'
-                }`}
-              >
-                {abbrev}
-              </button>
-            );
-          })}
+
+          <div
+            ref={chipRowRef}
+            className="flex gap-2 overflow-x-auto flex-1 scrollbar-hide"
+            style={{ scrollbarWidth: 'none' }}
+          >
+            <button
+              onClick={() => setTeamFilter(null)}
+              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                !teamFilter
+                  ? 'bg-lk-accent text-black border-lk-accent'
+                  : 'bg-lk-card border-lk-border text-lk-dim hover:text-lk-text'
+              }`}
+            >
+              All
+            </button>
+            {teams.map(team => {
+              const abbrev = TEAM_ABBREVS[team] ?? team.split(' ').pop()?.slice(0, 3).toUpperCase() ?? team;
+              const active = teamFilter === team;
+              return (
+                <button
+                  key={team}
+                  onClick={() => setTeamFilter(active ? null : team)}
+                  className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                    active
+                      ? 'bg-lk-accent text-black border-lk-accent'
+                      : 'bg-lk-card border-lk-border text-lk-dim hover:text-lk-text'
+                  }`}
+                >
+                  {abbrev}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => scrollChips('right')}
+            className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-lk-card border border-lk-border text-lk-dim hover:text-lk-text transition-colors"
+            aria-label="Scroll right"
+          >
+            <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path d="M9 18l6-6-6-6"/>
+            </svg>
+          </button>
         </div>
       )}
 
