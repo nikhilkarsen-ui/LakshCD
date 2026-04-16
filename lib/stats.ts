@@ -25,6 +25,7 @@
 // ============================================================
 
 import { serverSupa } from './supabase';
+import { fetchSeasonAverages } from './bdl-client';
 
 const BDL_BASE = 'https://api.balldontlie.io/v1';
 // Delay between player-name search requests (Phase 1 only, one-time).
@@ -134,8 +135,9 @@ export async function syncStats(): Promise<SyncResult> {
     }
   }
 
-  // ── Phase 2: Fetch season averages one player at a time ──────────────────
-  // /season_averages only accepts a single player_id — no batch endpoint on this tier.
+  // ── Phase 2: Fetch season averages — single batched request ──────────────
+  // Uses player_ids[] batch param (All-Star tier) — 1 request for all 80 players
+  // vs the old approach of N requests × delay, which hit the 60s maxDuration limit.
   const withIds = players.filter((p: any) => p.bdl_player_id);
   if (!withIds.length) {
     return { updated, mapped, skipped, errors };
@@ -143,23 +145,12 @@ export async function syncStats(): Promise<SyncResult> {
 
   const now = new Date().toISOString();
 
-  for (const player of withIds) {
-    try {
-      if (withIds.indexOf(player) > 0) {
-        await new Promise(r => setTimeout(r, SEARCH_DELAY_MS));
-      }
+  try {
+    const bdlIds = withIds.map((p: any) => Number(p.bdl_player_id));
+    const statsMap = await fetchSeasonAverages(bdlIds);
 
-      const url = `${BDL_BASE}/season_averages?season=2025&player_id=${player.bdl_player_id}`;
-      const res = await fetch(url, { headers: bdlHeaders(), cache: 'no-store' });
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        errors.push(`Stats fetch failed for "${player.name}" (${res.status}): ${body}`);
-        continue;
-      }
-
-      const json = await res.json();
-      const stats = (json.data as any[])?.[0];
+    for (const player of withIds) {
+      const stats = statsMap.get(Number(player.bdl_player_id));
 
       if (!stats) {
         errors.push(`No 2025 season stats for "${player.name}" (BDL ID: ${player.bdl_player_id})`);
@@ -168,9 +159,9 @@ export async function syncStats(): Promise<SyncResult> {
 
       const eff = computeEfficiency(stats);
       await db.from('players').update({
-        ppg:             parseFloat(Number(stats.pts       || 0).toFixed(1)),
-        apg:             parseFloat(Number(stats.ast       || 0).toFixed(1)),
-        rpg:             parseFloat(Number(stats.reb       || 0).toFixed(1)),
+        ppg:             parseFloat(Number(stats.pts          || 0).toFixed(1)),
+        apg:             parseFloat(Number(stats.ast          || 0).toFixed(1)),
+        rpg:             parseFloat(Number(stats.reb          || 0).toFixed(1)),
         efficiency:      parseFloat(eff.toFixed(1)),
         games_played:    Number(stats.games_played || 0),
         stats_synced_at: now,
@@ -182,9 +173,9 @@ export async function syncStats(): Promise<SyncResult> {
         `BDL SYNC: ${player.name} — ppg=${stats.pts} apg=${stats.ast} rpg=${stats.reb} ` +
         `eff=${eff.toFixed(1)} gp=${stats.games_played}`
       );
-    } catch (e: any) {
-      errors.push(`Stats error for "${player.name}": ${e.message}`);
     }
+  } catch (e: any) {
+    errors.push(`Batch stats fetch failed: ${e.message}`);
   }
 
   return { updated, mapped, skipped, errors };

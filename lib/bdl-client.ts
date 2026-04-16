@@ -157,16 +157,30 @@ export async function fetchLiveBoxScores(): Promise<Map<number, any> | null> {
 
 /**
  * Completed game stats for a given date.
- * Fetches all stats in a single paginated call (per_page=100 covers 15 players × 2 teams).
+ * Paginates through all results using BDL's cursor-based pagination.
+ * A busy NBA night (10+ games) can have 200+ player entries — per_page=100
+ * with no pagination misses players from later-fetched games.
  * Shape: Map<bdl_player_id, statRow & { _game_id }>
  */
 export async function fetchStatsByDate(date: string): Promise<Map<number, any>> {
-  const json = await bdlFetch(`/stats?dates[]=${date}&per_page=100`);
-  const map  = new Map<number, any>();
-  for (const entry of json?.data ?? []) {
-    if (entry?.player?.id != null) {
-      map.set(Number(entry.player.id), { ...entry, _game_id: entry.game?.id ?? 0, _period: 0, _time_remaining: null });
+  const map = new Map<number, any>();
+  let cursor: number | null = null;
+
+  for (let page = 0; page < 5; page++) {  // cap at 5 pages (500 entries) as a safety rail
+    const cursorParam = cursor != null ? `&cursor=${cursor}` : '';
+    const json = await bdlFetch(`/stats?dates[]=${date}&per_page=100${cursorParam}`);
+    for (const entry of json?.data ?? []) {
+      if (entry?.player?.id != null) {
+        map.set(Number(entry.player.id), {
+          ...entry,
+          _game_id:        entry.game?.id ?? 0,
+          _period:         0,
+          _time_remaining: null,
+        });
+      }
     }
+    cursor = json?.meta?.next_cursor ?? null;
+    if (cursor == null) break;  // no more pages
   }
   return map;
 }
@@ -186,13 +200,19 @@ export async function fetchInjuries(): Promise<Map<number, any>> {
   return map;
 }
 
-/** Season averages for a list of BDL player IDs (single batched request). */
+/**
+ * Season averages for a list of BDL player IDs (single batched request).
+ * BDL /season_averages returns flat entries: { player_id, pts, ast, reb, ... }
+ * NOT a nested { player: { id }, stats: { ... } } shape.
+ */
 export async function fetchSeasonAverages(bdlIds: number[]): Promise<Map<number, any>> {
   const idParams = bdlIds.map(id => `player_ids[]=${id}`).join('&');
   const json     = await bdlFetch(`/season_averages?season=2025&${idParams}`);
   const map      = new Map<number, any>();
   for (const entry of json?.data ?? []) {
-    if (entry?.player?.id != null) map.set(Number(entry.player.id), entry.stats);
+    // BDL returns flat player_id on the entry (not nested under entry.player)
+    const pid = entry?.player_id;
+    if (pid != null) map.set(Number(pid), entry);
   }
   return map;
 }

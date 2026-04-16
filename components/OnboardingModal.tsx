@@ -109,7 +109,13 @@ export function useOnboarding() {
 
   useEffect(() => {
     try {
-      if (!localStorage.getItem(STORAGE_KEY)) setShow(true);
+      if (!localStorage.getItem(STORAGE_KEY)) {
+        // Mark as seen immediately — don't wait for the user to click through.
+        // If we write only on dismiss, closing the tab mid-modal means the key
+        // never gets saved and the modal reappears on every login.
+        localStorage.setItem(STORAGE_KEY, '1');
+        setShow(true);
+      }
     } catch {}
   }, []);
 

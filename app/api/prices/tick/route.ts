@@ -5,7 +5,7 @@
 //   1. Compute oracle FV with Bayesian shrinkage + availability discount
 //   2. Compute 30-min TWAP and EWMA volatility from price history
 //   3. Drift AMM spot toward FV (rubber-band strengthens far from FV)
-//   4. Blend: 15% AMM + 65% FV + 20% TWAP (oracle-dominant)
+//   4. Blend: 20% AMM + 60% FV + 20% TWAP (oracle-dominant; weights shift with vol/idle/settlement)
 //   5. Recalibrate AMM pools to blended price
 //   6. Evaluate momentum circuit breaker (set flag if >8% rise / 30min)
 //   7. Write blended price to price_history

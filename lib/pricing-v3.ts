@@ -14,8 +14,8 @@
 //   Momentum circuit breaker: buying paused if >8% rise in 30min
 //   Position concentration cap: no account > 10% of market cap
 //
-// Price formula (neutral market):
-//   blended = 0.35 × AMM_spot + 0.45 × FairValue + 0.20 × TWAP_30min
+// Price formula (neutral market, base weights from constants.ts):
+//   blended = 0.20 × AMM_spot + 0.60 × FairValue + 0.20 × TWAP_30min
 //
 // Settlement price formula:
 //   settlement = 0.80 × FinalFairValue + 0.20 × TWAP_24h
