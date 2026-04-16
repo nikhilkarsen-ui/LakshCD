@@ -324,6 +324,27 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Fallback injections for players with no BDL stats ────────────────────
+    // Used when BDL resolves the player ID but has no season averages.
+    // Stats are approximate; real BDL data is preferred when available.
+    const FALLBACK_INJECTIONS: Record<string, PlayerEntry[]> = {
+      'Houston Rockets': [
+        // Jabari Smith Jr. — BDL has his ID but no current season stats
+        { bdlPlayerId: -1, name: 'Jabari Smith', position: 'PF', teamName: 'Houston Rockets', mpg: 27.0, ppg: 14.5, apg: 1.2, rpg: 7.4, eff: 12.8, gp: 62 },
+      ],
+    };
+
+    for (const [teamName, fallbacks] of Object.entries(FALLBACK_INJECTIONS)) {
+      const arr = byTeam.get(teamName) ?? [];
+      for (const fb of fallbacks) {
+        if (!arr.some(p => p.name.toLowerCase() === fb.name.toLowerCase())) {
+          arr.push(fb);
+          log(`  [fallback] Injected ${fb.name} for ${teamName}`);
+        }
+      }
+      byTeam.set(teamName, arr);
+    }
+
     // Sort each team by MPG desc, take top 5
     const finalPlayers: PlayerEntry[] = [];
     const teamBreakdown: Record<string, string[]> = {};
