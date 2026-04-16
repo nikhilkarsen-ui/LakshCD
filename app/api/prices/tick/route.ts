@@ -31,7 +31,7 @@ const NF = [
   'pool_x', 'pool_y', 'live_game_boost', 'prior_fv_score',
 ];
 
-export async function POST(req: NextRequest) {
+async function handleTick(req: NextRequest) {
   const cronSecret   = req.headers.get('x-cron-secret');
   const isVercelCron = req.headers.get('x-vercel-cron') === '1';
   const validCron    = isVercelCron || (!!process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET);
@@ -240,3 +240,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
+
+// Vercel cron sends GET — route both methods through the same handler
+export async function GET(req: NextRequest) { return handleTick(req); }
+export async function POST(req: NextRequest) { return handleTick(req); }
