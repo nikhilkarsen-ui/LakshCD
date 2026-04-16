@@ -32,7 +32,7 @@ export async function GET() {
     if (players.length > 0) {
       const playerIds = players.map((p: any) => p.id);
       // Fetch 25h of history (48 ticks at 30-min cadence, with 1h buffer) then downsample to
-      // 60 evenly-spaced points per player for the sparkline. Sending 48 × 108
+      // 60 evenly-spaced points per player for the sparkline. Sending 48 × 80
       // rows to the client is wasteful; 60 points is more than enough visual fidelity.
       const SPARKLINE_POINTS = 60;
       const since25h = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();

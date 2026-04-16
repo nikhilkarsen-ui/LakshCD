@@ -362,7 +362,7 @@ function LandingPage({ onStart }: { onStart: () => void }) {
           <Reveal className="mb-20">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { label: 'Players', value: '108' },
+                { label: 'Players', value: '80' },
                 { label: 'Pool Entry', value: '$10,000' },
                 { label: 'Platform Rake', value: '5%' },
                 { label: 'Payout Date', value: 'Jun 15 \'26' },
