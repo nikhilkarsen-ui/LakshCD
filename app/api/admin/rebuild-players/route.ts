@@ -181,6 +181,10 @@ const TEAM_PLAYERS: Record<string, {
     { first: 'Donte',     last: 'DiVincenzo',   position: 'SG' },
     { first: 'Shake',     last: 'Milton',       position: 'PG' },
     { first: 'Jaylen',    last: 'Clark',        position: 'SG' },
+    { first: 'Naz',       last: 'Reid',         position: 'PF' },
+    { first: 'Jaden',     last: 'McDaniels',    position: 'SF' },
+    { first: 'Julius',    last: 'Randle',       position: 'PF' },
+    { first: 'Mike',      last: 'Conley',       position: 'PG' },
   ],
 };
 
@@ -397,6 +401,29 @@ export async function POST(req: NextRequest) {
           eff: parseFloat(effRaw.toFixed(1)), gp,
         });
       }
+    }
+
+    // ── Fallback injections for players BDL consistently rate-limits ─────────
+    // Only injects if the player isn't already present from live data.
+    // Stats are approximate; real BDL data is used when available.
+    const FALLBACK_INJECTIONS: Record<string, PlayerEntry[]> = {
+      'Minnesota Timberwolves': [
+        { bdlPlayerId: -1, name: 'Naz Reid',       position: 'PF', teamName: 'Minnesota Timberwolves', mpg: 24.0, ppg: 13.6, apg: 2.0, rpg: 6.5, eff: 12.5, gp: 65 },
+        { bdlPlayerId: -2, name: 'Jaden McDaniels', position: 'SF', teamName: 'Minnesota Timberwolves', mpg: 29.0, ppg: 13.5, apg: 1.5, rpg: 4.2, eff: 10.8, gp: 60 },
+        { bdlPlayerId: -3, name: 'Julius Randle',   position: 'PF', teamName: 'Minnesota Timberwolves', mpg: 31.0, ppg: 19.8, apg: 4.9, rpg: 8.1, eff: 18.5, gp: 55 },
+        { bdlPlayerId: -4, name: 'Mike Conley',     position: 'PG', teamName: 'Minnesota Timberwolves', mpg: 25.0, ppg: 9.5,  apg: 5.2, rpg: 2.5, eff: 9.2,  gp: 60 },
+      ],
+    };
+
+    for (const [teamName, fallbacks] of Object.entries(FALLBACK_INJECTIONS)) {
+      const arr = byTeam.get(teamName) ?? [];
+      for (const fb of fallbacks) {
+        if (!arr.some(p => p.name.toLowerCase() === fb.name.toLowerCase())) {
+          arr.push(fb);
+          log(`  [fallback] Injected ${fb.name} for ${teamName}`);
+        }
+      }
+      byTeam.set(teamName, arr);
     }
 
     // Sort each team by MPG desc, take top 9
