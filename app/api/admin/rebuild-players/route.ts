@@ -33,12 +33,7 @@ const MIN_GAMES  = 3;   // minimum games played to trust the data
 
 // ── Forced injections ─────────────────────────────────────────────────────────
 // Only used for genuine injury-return edge cases where BDL's season_averages
-// may not have enough games to qualify the player. All other players come from
-// the live BDL roster → season_averages pipeline below.
-//
-// These stats represent projected full-season averages (what you'd expect if
-// healthy all year). The roster-first pipeline will naturally override these
-// with real BDL data if the player has ≥3 games in the feed.
+// may not have enough games to qualify the player.
 const FORCED_ADDITIONS: Record<string, Array<{
   name: string; position: string;
   mpg: number; ppg: number; apg: number; rpg: number;
@@ -48,7 +43,6 @@ const FORCED_ADDITIONS: Record<string, Array<{
 }>> = {
   'Boston Celtics': [
     // Tatum missed most of 2025-26 (Achilles, returned Mar 2026).
-    // BDL feed may have < MIN_GAMES games for him — force-inject so he appears.
     { name: 'Jayson Tatum', position: 'SF', mpg: 35.5, ppg: 30.2, apg: 5.1, rpg: 8.5, stl: 1.0, blk: 0.6, fga: 19.0, fgm: 10.0, fta: 7.5, ftm: 6.3, tov: 2.8, gp: 42 },
   ],
 };
@@ -67,8 +61,8 @@ async function bdlGet(path: string, attempt = 0): Promise<any> {
     headers: bdlHeaders(),
     cache: 'no-store',
   });
-  if (res.status === 429 && attempt < 2) {
-    await new Promise(r => setTimeout(r, 15_000));
+  if (res.status === 429 && attempt < 3) {
+    await new Promise(r => setTimeout(r, 10_000 * (attempt + 1)));
     return bdlGet(path, attempt + 1);
   }
   if (!res.ok) return null;
@@ -107,6 +101,33 @@ function computePools(price: number) {
   };
 }
 
+// Batch fetch season averages for up to 50 player IDs at a time.
+// BDL v1 /season_averages accepts player_ids[] as a repeated query param.
+async function fetchSeasonAveragesBatch(
+  playerIds: number[],
+  season: number,
+  log: (msg: string) => void,
+): Promise<Map<number, any>> {
+  const statsMap = new Map<number, any>();
+  const CHUNK = 50;
+
+  for (let i = 0; i < playerIds.length; i += CHUNK) {
+    const chunk = playerIds.slice(i, i + CHUNK);
+    const qs = chunk.map(id => `player_ids[]=${id}`).join('&');
+    const path = `/season_averages?season=${season}&${qs}`;
+    log(`  Fetching season avgs batch ${Math.floor(i / CHUNK) + 1} (${chunk.length} players)...`);
+
+    const json = await bdlGet(path);
+    for (const row of json?.data ?? []) {
+      statsMap.set(Number(row.player_id), row);
+    }
+
+    if (i + CHUNK < playerIds.length) await wait(600);
+  }
+
+  return statsMap;
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const secret = req.headers.get('x-cron-secret') || req.headers.get('x-admin-secret');
@@ -136,44 +157,63 @@ export async function POST(req: NextRequest) {
     }
     log(`Resolved ${resolvedTeams.length}/${TARGET_TEAMS.length} teams`);
 
-    // ── Step 2: Roster-first — fetch current roster per team, then season avgs ─
+    // ── Step 2: Fetch all rosters (one call per team, 600ms gap) ─────────────
     //
-    // This is the correct approach for team accuracy:
-    //   /players?team_ids[]=X  → who is CURRENTLY on this team's roster
-    //   /season_averages?season=2025&player_id=Y → their 2025-26 stats
+    // Strategy to avoid timeout:
+    //   1. Fetch all 12 rosters sequentially (12 calls, ~8 seconds total)
+    //   2. Collect all unique player IDs across all rosters
+    //   3. Batch-fetch season_averages in chunks of 50 (3-4 calls, ~3 seconds)
+    //   4. Assign stats back to team rosters
     //
-    // A traded player's old team stats don't bleed in because we only look up
-    // players who are on the team's current BDL roster.
+    // This replaces the old 180+ sequential calls (one per player) which
+    // took 200+ seconds and caused FUNCTION_INVOCATION_TIMEOUT.
 
+    // roster map: teamName → array of raw BDL player objects
+    const rosterByTeam = new Map<string, any[]>();
+
+    for (const team of resolvedTeams) {
+      log(`[${team.name}] Fetching roster...`);
+      await wait(600);
+      const rosterJson = await bdlGet(`/players?team_ids[]=${team.bdlId}&per_page=100`);
+      const roster: any[] = rosterJson?.data ?? [];
+      rosterByTeam.set(team.name, roster);
+      log(`  ${roster.length} players on roster`);
+    }
+
+    // Collect all unique player IDs across all rosters
+    const allPlayerIds: number[] = [];
+    const seenIds = new Set<number>();
+    for (const roster of rosterByTeam.values()) {
+      for (const p of roster) {
+        const pid = Number(p.id);
+        if (!seenIds.has(pid)) { seenIds.add(pid); allPlayerIds.push(pid); }
+      }
+    }
+    log(`Total unique roster players to fetch stats for: ${allPlayerIds.length}`);
+
+    // ── Step 3: Batch-fetch season averages ───────────────────────────────────
+    const statsMap = await fetchSeasonAveragesBatch(allPlayerIds, 2025, log);
+    log(`Got season averages for ${statsMap.size} players`);
+
+    // ── Step 4: Build per-team player entries ─────────────────────────────────
     type PlayerEntry = {
       bdlPlayerId: number; name: string; position: string; teamName: string;
       mpg: number; ppg: number; apg: number; rpg: number; eff: number; gp: number;
     };
 
     const byTeam = new Map<string, PlayerEntry[]>();
-    for (const team of resolvedTeams) byTeam.set(team.name, []);
 
     for (const team of resolvedTeams) {
-      log(`[${team.name}] Fetching current roster...`);
-      await wait(1100);
-
-      const rosterJson = await bdlGet(`/players?team_ids[]=${team.bdlId}&per_page=100`);
-      const roster: any[] = rosterJson?.data ?? [];
-      log(`  ${roster.length} players on roster`);
-
+      const roster = rosterByTeam.get(team.name) ?? [];
       const teamPlayers: PlayerEntry[] = [];
 
       for (const player of roster) {
-        await wait(1100);
-        const pid = Number(player.id);
-        const avgJson = await bdlGet(`/season_averages?season=2025&player_id=${pid}`);
-        const stats = avgJson?.data?.[0];
-
+        const pid   = Number(player.id);
+        const stats = statsMap.get(pid);
         if (!stats) continue;
 
         const mpg = parseMinutes(stats.min);
         const gp  = Number(stats.games_played ?? 0);
-
         if (mpg < MIN_MPG || gp < MIN_GAMES) continue;
 
         const ppg = parseFloat(Number(stats.pts      ?? 0).toFixed(1));
@@ -199,7 +239,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      log(`  ${teamPlayers.length} qualified players (≥${MIN_MPG}mpg, ≥${MIN_GAMES}gp)`);
+      log(`[${team.name}] ${teamPlayers.length} qualified players (≥${MIN_MPG}mpg, ≥${MIN_GAMES}gp)`);
 
       // ── Inject forced additions for this team ─────────────────────────────
       const forced = FORCED_ADDITIONS[team.name] ?? [];
@@ -210,9 +250,9 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // Try to resolve BDL ID from the roster we just fetched
         const bdlIdFromRoster = h.bdlId ?? (() => {
-          const match = roster.find((p: any) =>
+          const roster = rosterByTeam.get(team.name) ?? [];
+          const match  = roster.find((p: any) =>
             `${p.first_name} ${p.last_name}`.toLowerCase() === h.name.toLowerCase()
           );
           return match ? Number(match.id) : null;
@@ -234,13 +274,10 @@ export async function POST(req: NextRequest) {
       byTeam.set(team.name, top9);
 
       log(`  Top 9: ${top9.map(p => `${p.name} (${p.mpg.toFixed(1)}mpg ${p.ppg}ppg)`).join(', ')}`);
-
-      if (top9.length < 9) {
-        log(`  ⚠ Only ${top9.length} players for ${team.name} — check BDL roster data`);
-      }
+      if (top9.length < 9) log(`  ⚠ Only ${top9.length} players — check BDL roster data`);
     }
 
-    // ── Step 3: Flatten and validate ─────────────────────────────────────────
+    // ── Step 5: Flatten and validate ─────────────────────────────────────────
     const finalPlayers: PlayerEntry[] = [];
     const teamBreakdown: Record<string, string[]> = {};
 
@@ -250,18 +287,17 @@ export async function POST(req: NextRequest) {
     }
 
     log(`Total players selected: ${finalPlayers.length}`);
-
     if (finalPlayers.length === 0) {
       throw new Error('No players selected — check BDL API key and season 2025 data.');
     }
 
-    // ── Step 4: Delete existing players ──────────────────────────────────────
+    // ── Step 6: Delete existing players ──────────────────────────────────────
     log('Deleting all existing players...');
     const { error: deleteErr } = await db.from('players').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     if (deleteErr) throw new Error(`Delete failed: ${deleteErr.message}`);
     log('Deleted.');
 
-    // ── Step 5: Insert ────────────────────────────────────────────────────────
+    // ── Step 7: Insert ────────────────────────────────────────────────────────
     log('Inserting new players...');
     const now = new Date().toISOString();
     const inserts = finalPlayers.map(p => {
@@ -288,7 +324,7 @@ export async function POST(req: NextRequest) {
     if (insertErr) throw new Error(`Insert failed: ${insertErr.message}`);
     log(`Inserted ${inserts.length} players.`);
 
-    // ── Step 6: Validate ──────────────────────────────────────────────────────
+    // ── Step 8: Validate ──────────────────────────────────────────────────────
     const { data: countRows } = await db.from('players').select('team');
     const totalCount = countRows?.length ?? 0;
     const teamCountMap: Record<string, number> = {};
