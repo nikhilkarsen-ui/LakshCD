@@ -17,9 +17,12 @@ const MIN_GAMES  = 3;
 
 // ── Target players per team ───────────────────────────────────────────────────
 // 10–12 players per team; top 9 by MPG are selected after fetching live stats.
-// Update this list when rosters change significantly.
-// NOTE: use exact names as BDL stores them (search is by full name now).
-const TEAM_PLAYERS: Record<string, { first: string; last: string; position: string }[]> = {
+// bdlLast: override when BDL stores a different last name (Jr. suffix, etc.)
+// aliases: additional full-name spellings BDL might use
+const TEAM_PLAYERS: Record<string, {
+  first: string; last: string; position: string;
+  bdlLast?: string; aliases?: string[];
+}[]> = {
   'Detroit Pistons': [
     { first: 'Cade',      last: 'Cunningham',   position: 'PG' },
     { first: 'Jalen',     last: 'Duren',        position: 'C'  },
@@ -52,7 +55,6 @@ const TEAM_PLAYERS: Record<string, { first: string; last: string; position: stri
     { first: 'OG',        last: 'Anunoby',      position: 'SF' },
     { first: 'Josh',      last: 'Hart',         position: 'SG' },
     { first: 'Mikal',     last: 'Bridges',      position: 'SF' },
-    { first: 'Donte',     last: 'DiVincenzo',   position: 'SG' },
     { first: 'Mitchell',  last: 'Robinson',     position: 'C'  },
     { first: 'Precious',  last: 'Achiuwa',      position: 'PF' },
     { first: 'Miles',     last: 'McBride',      position: 'PG' },
@@ -92,7 +94,7 @@ const TEAM_PLAYERS: Record<string, { first: string; last: string; position: stri
     { first: 'De\'Andre', last: 'Hunter',       position: 'SF' },
     { first: 'Bogdan',    last: 'Bogdanovic',   position: 'SG' },
     { first: 'Onyeka',    last: 'Okongwu',      position: 'C'  },
-    { first: 'Larry',     last: 'Nance',        position: 'PF' },
+    { first: 'Larry',     last: 'Nance',        position: 'PF', bdlLast: 'Nance Jr.' },
     { first: 'Kobe',      last: 'Bufkin',       position: 'SG' },
     { first: 'Saddiq',    last: 'Bey',          position: 'SF' },
     { first: 'Dyson',     last: 'Daniels',      position: 'SG' },
@@ -126,7 +128,7 @@ const TEAM_PLAYERS: Record<string, { first: string; last: string; position: stri
   'Denver Nuggets': [
     { first: 'Nikola',    last: 'Jokic',        position: 'C'  },
     { first: 'Jamal',     last: 'Murray',       position: 'PG' },
-    { first: 'Michael',   last: 'Porter',       position: 'SF' },
+    { first: 'Michael',   last: 'Porter',       position: 'SF', bdlLast: 'Porter Jr.' },
     { first: 'Aaron',     last: 'Gordon',       position: 'PF' },
     { first: 'Kentavious', last: 'Caldwell-Pope', position: 'SG' },
     { first: 'Reggie',    last: 'Jackson',      position: 'PG' },
@@ -283,25 +285,29 @@ export async function POST(req: NextRequest) {
 
     // Search tasks: search BDL by LAST NAME only (BDL's search does prefix
     // matching on individual fields — full-name queries return 0 results).
-    // Use per_page=50 so common last names (Green, Mitchell, Allen) return
-    // enough results to include the right player. Require exact full-name
-    // match — no last-name-only fallback to avoid wrong-player assignments.
-    // Concurrency=5, 1200ms gap keeps us well under BDL's 60 req/min limit.
+    // Use per_page=100 so common last names (Green, Mitchell, Williams) return
+    // enough results. bdlLast overrides the search term for Jr-suffix players.
+    // Concurrency=2, 1200ms gap → ~100/min, avoids rate-limit bursts.
     const searchTasks = allEntries.map(entry => async () => {
-      const searchTerm = encodeURIComponent(entry.last);
-      const json = await bdlGet(`/players?search=${searchTerm}&per_page=50`);
+      const searchLast = (entry as any).bdlLast ?? entry.last;
+      const searchTerm = encodeURIComponent(searchLast);
+      const json = await bdlGet(`/players?search=${searchTerm}&per_page=100`);
       const results: any[] = json?.data ?? [];
 
-      // Require exact full-name match (case-insensitive)
-      const target = `${entry.first} ${entry.last}`.toLowerCase();
-      const match = results.find((p: any) =>
-        `${p.first_name} ${p.last_name}`.toLowerCase() === target
-      );
+      // Exact full-name match using bdlLast if set (e.g. "Porter Jr.")
+      const bdlFullName = `${entry.first} ${searchLast}`.toLowerCase();
+      const stdFullName = `${entry.first} ${entry.last}`.toLowerCase();
+      const aliases: string[] = ((entry as any).aliases ?? []).map((a: string) => a.toLowerCase());
+
+      const match = results.find((p: any) => {
+        const n = `${p.first_name} ${p.last_name}`.toLowerCase();
+        return n === bdlFullName || n === stdFullName || aliases.includes(n);
+      });
 
       return { entry, bdlPlayer: match ?? null };
     });
 
-    const searchResults = await runConcurrent(searchTasks, 5, 1200);
+    const searchResults = await runConcurrent(searchTasks, 2, 1200);
 
     // Map: "TeamName|FirstLast" → bdlPlayerId
     const resolvedIds: Array<{ teamName: string; first: string; last: string; position: string; bdlId: number }> = [];
@@ -314,23 +320,37 @@ export async function POST(req: NextRequest) {
     }
     log(`Resolved ${resolvedIds.length}/${allEntries.length} players via BDL search`);
 
-    // ── Step 2: Fetch season averages concurrently ────────────────────────────
-    // Try 2025-26 season first; fall back to 2024-25 for players whose current
-    // season stats aren't in BDL yet (injured returns, limited games, etc.).
-    log('Fetching season averages...');
+    // ── Step 2: Fetch season averages — two clean passes ─────────────────────
+    // Pass A: current season (2025-26). Pass B: fallback to 2024-25 only for
+    // players with no 2025 data. Two separate passes avoids the 2-serial-calls-
+    // per-task pattern that doubled the API rate and caused burst rate limiting.
+    // Concurrency=2, 1200ms gap → stable ~100 req/min across both passes.
+    log('Fetching 2025-26 season averages (pass A)...');
+    const statsMap = new Map<number, any>(); // bdlId → stats row
 
-    const statTasks = resolvedIds.map(p => async () => {
-      const json25 = await bdlGet(`/season_averages?season=2025&player_id=${p.bdlId}`);
-      const stats25 = json25?.data?.[0] ?? null;
-      if (stats25) return { p, stats: stats25 };
-
-      // Fallback: last season's averages (gives a price baseline)
-      const json24 = await bdlGet(`/season_averages?season=2024&player_id=${p.bdlId}`);
-      const stats24 = json24?.data?.[0] ?? null;
-      return { p, stats: stats24 };
+    const passATasks = resolvedIds.map(p => async () => {
+      const json = await bdlGet(`/season_averages?season=2025&player_id=${p.bdlId}`);
+      const row = json?.data?.[0] ?? null;
+      if (row) statsMap.set(p.bdlId, row);
+      return { bdlId: p.bdlId, found: !!row };
     });
+    await runConcurrent(passATasks, 2, 1200);
+    log(`Pass A: ${statsMap.size}/${resolvedIds.length} players have 2025-26 stats`);
 
-    const statResults = await runConcurrent(statTasks, 5, 800);
+    // Pass B: only for players missing 2025 stats
+    const needFallback = resolvedIds.filter(p => !statsMap.has(p.bdlId));
+    if (needFallback.length > 0) {
+      log(`Fetching 2024-25 fallback for ${needFallback.length} players (pass B)...`);
+      const passBTasks = needFallback.map(p => async () => {
+        const json = await bdlGet(`/season_averages?season=2024&player_id=${p.bdlId}`);
+        const row = json?.data?.[0] ?? null;
+        if (row) statsMap.set(p.bdlId, row);
+        return { bdlId: p.bdlId, found: !!row };
+      });
+      await runConcurrent(passBTasks, 2, 1200);
+    }
+
+    const statResults = resolvedIds.map(p => ({ p, stats: statsMap.get(p.bdlId) ?? null }));
     log(`Got stats for ${statResults.filter(r => r.stats).length}/${resolvedIds.length} players`);
 
     // ── Step 3: Build per-team entries ────────────────────────────────────────
