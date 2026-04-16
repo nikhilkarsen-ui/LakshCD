@@ -101,28 +101,35 @@ function computePools(price: number) {
   };
 }
 
-// Batch fetch season averages for up to 50 player IDs at a time.
-// BDL v1 /season_averages accepts player_ids[] as a repeated query param.
-async function fetchSeasonAveragesBatch(
+// Concurrent fetch of season averages — 20 players at a time.
+// BDL v1 /season_averages only supports a single player_id per call,
+// so we parallelise to avoid sequential 1100ms-per-player timeout.
+// Most calls for historical/inactive players return empty and resolve fast.
+async function fetchSeasonAveragesConcurrent(
   playerIds: number[],
   season: number,
   log: (msg: string) => void,
 ): Promise<Map<number, any>> {
   const statsMap = new Map<number, any>();
-  const CHUNK = 50;
+  const CONCURRENCY = 20;
 
-  for (let i = 0; i < playerIds.length; i += CHUNK) {
-    const chunk = playerIds.slice(i, i + CHUNK);
-    const qs = chunk.map(id => `player_ids[]=${id}`).join('&');
-    const path = `/season_averages?season=${season}&${qs}`;
-    log(`  Fetching season avgs batch ${Math.floor(i / CHUNK) + 1} (${chunk.length} players)...`);
-
-    const json = await bdlGet(path);
-    for (const row of json?.data ?? []) {
-      statsMap.set(Number(row.player_id), row);
+  for (let i = 0; i < playerIds.length; i += CONCURRENCY) {
+    const chunk = playerIds.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      chunk.map(pid =>
+        bdlGet(`/season_averages?season=${season}&player_id=${pid}`)
+          .then(json => ({ pid, row: json?.data?.[0] ?? null }))
+          .catch(() => ({ pid, row: null }))
+      )
+    );
+    for (const { pid, row } of results) {
+      if (row) statsMap.set(pid, row);
     }
-
-    if (i + CHUNK < playerIds.length) await wait(600);
+    if (i % (CONCURRENCY * 5) === 0) {
+      log(`  Stats progress: ${Math.min(i + CONCURRENCY, playerIds.length)}/${playerIds.length} (${statsMap.size} with data)`);
+    }
+    // Small gap between batches so we don't burst-trigger 429
+    if (i + CONCURRENCY < playerIds.length) await wait(300);
   }
 
   return statsMap;
@@ -191,8 +198,8 @@ export async function POST(req: NextRequest) {
     }
     log(`Total unique roster players to fetch stats for: ${allPlayerIds.length}`);
 
-    // ── Step 3: Batch-fetch season averages ───────────────────────────────────
-    const statsMap = await fetchSeasonAveragesBatch(allPlayerIds, 2025, log);
+    // ── Step 3: Concurrent-fetch season averages ──────────────────────────────
+    const statsMap = await fetchSeasonAveragesConcurrent(allPlayerIds, 2025, log);
     log(`Got season averages for ${statsMap.size} players`);
 
     // ── Step 4: Build per-team player entries ─────────────────────────────────
