@@ -91,6 +91,25 @@ const PlayerRow = memo(function PlayerRow({
 });
 
 // ─── HomeView ─────────────────────────────────────────────────────────────────
+const TEAM_ABBREVS: Record<string, string> = {
+  'Atlanta Hawks':           'ATL',
+  'Boston Celtics':          'BOS',
+  'Charlotte Hornets':       'CHA',
+  'Cleveland Cavaliers':     'CLE',
+  'Denver Nuggets':          'DEN',
+  'Detroit Pistons':         'DET',
+  'Golden State Warriors':   'GSW',
+  'Houston Rockets':         'HOU',
+  'Los Angeles Lakers':      'LAL',
+  'Minnesota Timberwolves':  'MIN',
+  'New York Knicks':         'NYK',
+  'Oklahoma City Thunder':   'OKC',
+  'Philadelphia 76ers':      'PHI',
+  'Portland Trail Blazers':  'POR',
+  'San Antonio Spurs':       'SAS',
+  'Toronto Raptors':         'TOR',
+};
+
 export default function HomeView({
   players,
   marketCap,
@@ -104,15 +123,25 @@ export default function HomeView({
   sparklines?: Record<string, { price: number }[]>;
   onSelect: (p: Player) => void;
 }) {
-  const [q, setQ] = useState('');
+  const [q, setQ]           = useState('');
+  const [teamFilter, setTeamFilter] = useState<string | null>(null);
 
-  const filtered = useMemo(
-    () => !q ? players : players.filter(p =>
+  // Derive sorted unique teams from the loaded player list
+  const teams = useMemo(() => {
+    const seen = new Set<string>();
+    for (const p of players) seen.add(p.team);
+    return Array.from(seen).sort();
+  }, [players]);
+
+  const filtered = useMemo(() => {
+    let list = players;
+    if (teamFilter) list = list.filter(p => p.team === teamFilter);
+    if (q) list = list.filter(p =>
       p.name.toLowerCase().includes(q.toLowerCase()) ||
       p.team.toLowerCase().includes(q.toLowerCase()),
-    ),
-    [players, q],
-  );
+    );
+    return list;
+  }, [players, q, teamFilter]);
 
   // Build sparkline data per player — real data if available, fallback otherwise.
   // Memoized on price (changes when tick fires) so rows only re-render on actual price moves.
@@ -135,7 +164,7 @@ export default function HomeView({
 
   return (
     <div className="animate-fade-in">
-      <div className="mx-4 mt-4 mb-3">
+      <div className="mx-4 mt-4 mb-2">
         <div className="flex items-center gap-2 bg-lk-card border border-lk-border rounded-xl px-4 py-2.5">
           <svg width="16" height="16" fill="none" stroke="#64748b" strokeWidth="2" viewBox="0 0 24 24">
             <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
@@ -147,10 +176,50 @@ export default function HomeView({
             onChange={e => setQ(e.target.value)}
             className="flex-1 bg-transparent border-none text-lk-text text-sm outline-none placeholder:text-lk-muted"
           />
+          {q && (
+            <button onClick={() => setQ('')} className="text-lk-muted hover:text-lk-text transition-colors">
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="px-4 mb-3">
+      {/* Team filter chips */}
+      {teams.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto px-4 pb-2 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+          <button
+            onClick={() => setTeamFilter(null)}
+            className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+              !teamFilter
+                ? 'bg-lk-accent text-black border-lk-accent'
+                : 'bg-lk-card border-lk-border text-lk-dim hover:text-lk-text'
+            }`}
+          >
+            All
+          </button>
+          {teams.map(team => {
+            const abbrev = TEAM_ABBREVS[team] ?? team.split(' ').pop()?.slice(0, 3).toUpperCase() ?? team;
+            const active = teamFilter === team;
+            return (
+              <button
+                key={team}
+                onClick={() => setTeamFilter(active ? null : team)}
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                  active
+                    ? 'bg-lk-accent text-black border-lk-accent'
+                    : 'bg-lk-card border-lk-border text-lk-dim hover:text-lk-text'
+                }`}
+              >
+                {abbrev}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="px-4 mb-3 mt-1">
         <Card className="flex justify-between items-center">
           <div>
             <div className="text-[11px] text-lk-dim tracking-wider uppercase mb-1">Total Market Cap</div>

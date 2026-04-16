@@ -107,6 +107,34 @@ const TEAM_PLAYERS: Record<string, {
     { first: 'Jaden',      last: 'McDaniels',   position: 'SF' },
     { first: 'Donte',      last: 'DiVincenzo',  position: 'SG' },
   ],
+  'Golden State Warriors': [
+    { first: 'Stephen',    last: 'Curry',       position: 'PG' },
+    { first: 'Kristaps',   last: 'Porzingis',   position: 'C'  },
+    { first: 'Draymond',   last: 'Green',       position: 'PF' },
+    { first: 'Brandin',    last: 'Podziemski',  position: 'SG' },
+    { first: 'Al',         last: 'Horford',     position: 'PF' },
+  ],
+  'Philadelphia 76ers': [
+    { first: 'Tyrese',     last: 'Maxey',       position: 'PG' },
+    { first: 'Andre',      last: 'Drummond',    position: 'C'  },
+    { first: 'Paul',       last: 'George',      position: 'SF' },
+    { first: 'VJ',         last: 'Edgecombe',   position: 'SG', aliases: ['V.J. Edgecombe'] },
+    { first: 'Kelly',      last: 'Oubre',       position: 'SF', aliases: ['Kelly Oubre Jr.'] },
+  ],
+  'Charlotte Hornets': [
+    { first: 'LaMelo',     last: 'Ball',        position: 'PG' },
+    { first: 'Miles',      last: 'Bridges',     position: 'SF' },
+    { first: 'Brandon',    last: 'Miller',      position: 'SG' },
+    { first: 'Coby',       last: 'White',       position: 'PG' },
+    { first: 'Moussa',     last: 'Diabaté',     position: 'C',  bdlLast: 'Diabate', aliases: ['Moussa Diabate'] },
+  ],
+  'Portland Trail Blazers': [
+    { first: 'Deni',       last: 'Avdija',      position: 'SF' },
+    { first: 'Jrue',       last: 'Holiday',     position: 'PG' },
+    { first: 'Jerami',     last: 'Grant',       position: 'PF' },
+    { first: 'Shaedon',    last: 'Sharpe',      position: 'SG' },
+    { first: 'Toumani',    last: 'Camara',      position: 'SF' },
+  ],
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -331,6 +359,10 @@ export async function POST(req: NextRequest) {
     const STAT_FALLBACKS: StatFallback[] = [
       // Jabari Smith Jr. — BDL ID resolves fine but no current season stats
       { name: 'Jabari Smith', position: 'PF', mpg: 27.0, ppg: 14.5, apg: 1.2, rpg: 7.4, eff: 12.8, gp: 62 },
+      // VJ Edgecombe — rookie, may not have BDL stats yet
+      { name: 'VJ Edgecombe', position: 'SG', mpg: 18.0, ppg: 8.5, apg: 1.5, rpg: 2.8, eff: 7.0, gp: 40 },
+      // Moussa Diabaté — limited role, may lack BDL stats
+      { name: 'Moussa Diabaté', position: 'C', mpg: 16.0, ppg: 6.5, apg: 0.8, rpg: 5.2, eff: 6.8, gp: 45 },
     ];
 
     for (const fb of STAT_FALLBACKS) {
@@ -403,9 +435,11 @@ export async function POST(req: NextRequest) {
     for (const row of countRows ?? []) teamCountMap[row.team] = (teamCountMap[row.team] ?? 0) + 1;
     for (const [team, count] of Object.entries(teamCountMap)) log(`  ${team}: ${count}`);
 
+    const expectedTeams = Object.keys(TEAM_PLAYERS).length;
+    const expectedTotal = expectedTeams * 5;
     const badTeams = Object.entries(teamCountMap).filter(([, c]) => c !== 5);
-    if (totalCount === 60 && badTeams.length === 0) {
-      log('✓ Laksh player universe successfully rebuilt: 60 players, 12 teams × 5 each.');
+    if (totalCount === expectedTotal && badTeams.length === 0) {
+      log(`✓ Laksh player universe successfully rebuilt: ${expectedTotal} players, ${expectedTeams} teams × 5 each.`);
     } else {
       log(`⚠ Done. Total: ${totalCount}. Issues: ${badTeams.map(([t, c]) => `${t}:${c}`).join(', ') || 'none'}`);
     }
@@ -415,7 +449,7 @@ export async function POST(req: NextRequest) {
       total_inserted: totalCount,
       team_breakdown: teamBreakdown,
       team_counts: teamCountMap,
-      validation_ok: totalCount === 60 && badTeams.length === 0,
+      validation_ok: totalCount === expectedTotal && badTeams.length === 0,
       logs,
     });
 
