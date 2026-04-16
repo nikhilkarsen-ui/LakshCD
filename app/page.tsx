@@ -76,7 +76,7 @@ const HOW_IT_WORKS = [
   {
     step: '1',
     title: 'Join the pool',
-    desc: 'Every participant starts with $10,000. That money enters a shared season pool — the total prize pot that gets paid out at the end.',
+    desc: 'Every participant starts with $10,000 in virtual cash to trade with. Your deposit enters a shared season pool — the total prize pot that gets paid out at the end.',
   },
   {
     step: '2',
@@ -239,7 +239,7 @@ function LandingPage({ onStart }: { onStart: () => void }) {
 
                 <div id="waitlist" className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 max-w-md">
                   <p className="text-xs uppercase tracking-[0.4em] text-lk-accent mb-2">Beta access</p>
-                  <p className="text-sm text-lk-dim mb-4">Drop your email and we'll let you in when spots open. Everyone starts with $10,000 in the prize pool.</p>
+                  <p className="text-sm text-lk-dim mb-4">Drop your email and we'll let you in when spots open. Everyone starts with $10,000 in virtual cash to trade.</p>
                   <WaitlistForm />
                 </div>
 
@@ -333,7 +333,7 @@ function LandingPage({ onStart }: { onStart: () => void }) {
                 <p className="text-xs uppercase tracking-[0.4em] text-emerald-400 mb-3">How the payout works</p>
                 <h3 className="text-2xl font-bold mb-3">One pool. Distributed proportionally on June 15.</h3>
                 <p className="text-sm leading-7 text-lk-dim max-w-lg">
-                  Every participant's $10k goes into a shared prize pool. The platform takes a 5% rake upfront — the remaining 95% is the prize. At season end, each player receives a share of that pool proportional to how their portfolio performed versus the field. Outperform, and you walk away with more than you put in. No fake settlement math — the pool is fixed.
+                  Every participant trades with $10,000 in virtual cash. Your deposit goes into a shared prize pool — the platform takes a 5% rake upfront and the remaining 95% is the prize. At season end, each player receives a share proportional to how their virtual portfolio performed versus the field. Outperform, and you walk away with more than you put in.
                 </p>
               </div>
               <div className="text-center min-w-[160px]">
@@ -364,7 +364,7 @@ function LandingPage({ onStart }: { onStart: () => void }) {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 { label: 'Players', value: '80' },
-                { label: 'Pool Entry', value: '$10,000' },
+                { label: 'Virtual Starting Cash', value: '$10,000' },
                 { label: 'Platform Rake', value: '5%' },
                 { label: 'Payout Date', value: 'Jun 15 \'26' },
               ].map(s => (

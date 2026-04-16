@@ -14,7 +14,7 @@ const HOW_IT_WORKS = [
   {
     step: '1',
     title: 'You join the pool',
-    body: 'Your $10,000 enters a shared prize pool. The platform takes 5% upfront as rake — the remaining 95% is the prize pot that gets paid out at season end.',
+    body: 'You trade with $10,000 in virtual cash. Your real deposit enters a shared prize pool — the platform takes 5% upfront as rake and the remaining 95% is the prize pot paid out at season end.',
   },
   {
     step: '2',
@@ -114,7 +114,7 @@ export default function AboutView() {
 
       {/* One-liner */}
       <p className="text-sm text-lk-text leading-relaxed">
-        Laksh is a parimutuel NBA player market. Everyone joins with $10,000. Those funds go into a shared prize pool. Trade player shares to build the strongest portfolio — and at season end, the pool is split proportionally based on how everyone performed.
+        Laksh is a parimutuel NBA player market. Everyone starts with $10,000 in virtual cash to trade with. Your real entry deposit goes into a shared prize pool — trade player shares to build the strongest virtual portfolio, and at season end the pool is split proportionally based on how everyone performed.
       </p>
 
       {/* Settlement + P&L row */}

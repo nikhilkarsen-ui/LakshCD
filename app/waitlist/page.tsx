@@ -22,7 +22,7 @@ export default function WaitlistPage() {
           <div className="text-xs uppercase tracking-[0.3em] text-lk-accent mb-3">Beta Access</div>
           <h1 className="text-2xl font-bold text-lk-text mb-3">Join the waitlist</h1>
           <p className="text-sm text-lk-dim leading-relaxed">
-            Drop your email and we'll let you in when beta spots open. Everyone starts with $10,000 in the prize pool.
+            Drop your email and we'll let you in when beta spots open. Everyone starts with $10,000 in virtual cash to trade with.
           </p>
         </div>
 

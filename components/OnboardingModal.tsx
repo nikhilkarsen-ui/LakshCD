@@ -10,9 +10,9 @@ const STEPS = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33" />
       </svg>
     ),
-    title: "You start with $10,000",
-    body: "Every participant gets $10,000 to start. That money goes into a shared prize pool — the total payout pot that gets distributed at season end on June 15.",
-    sub: "Your starting balance is your stake in the game.",
+    title: "You start with $10,000 in virtual cash",
+    body: "Every participant gets $10,000 in virtual cash to trade with. Your performance relative to other players determines your share of the real prize pool at season end on June 15.",
+    sub: "Virtual money to trade with — real competition for real prizes.",
   },
   {
     icon: (
@@ -32,7 +32,7 @@ const STEPS = [
     ),
     title: "Outperform to win",
     body: "On June 15, the prize pool is split based on your portfolio's performance relative to everyone else. The more you outperform, the bigger your share. Top performers take home more than they put in.",
-    sub: "No fake money — this is the real $10,000 you deposited competing for a real payout.",
+    sub: "Your virtual portfolio is the scorecard — your real payout depends on how you rank.",
   },
 ];
 
