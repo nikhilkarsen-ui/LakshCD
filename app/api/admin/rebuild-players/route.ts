@@ -269,14 +269,42 @@ export async function POST(req: NextRequest) {
 
     // Map: "TeamName|FirstLast" → bdlPlayerId
     const resolvedIds: Array<{ teamName: string; first: string; last: string; position: string; bdlId: number }> = [];
+    const failedEntries: typeof allEntries = [];
     for (const { entry, bdlPlayer } of searchResults) {
       if (bdlPlayer) {
         resolvedIds.push({ ...entry, bdlId: Number(bdlPlayer.id) });
       } else {
-        log(`  WARNING: Could not find BDL player for "${entry.first} ${entry.last}" (${entry.teamName})`);
+        failedEntries.push(entry);
       }
     }
     log(`Resolved ${resolvedIds.length}/${allEntries.length} players via BDL search`);
+
+    // ── Retry pass for unresolved players (rate-limit victims) ────────────────
+    // 4-second cooldown then single-concurrency retries — much more conservative.
+    if (failedEntries.length > 0) {
+      log(`Retrying ${failedEntries.length} unresolved players after cooldown...`);
+      await wait(4000);
+      const retryTasks = failedEntries.map(entry => async () => {
+        const searchLast = (entry as any).bdlLast ?? entry.last;
+        const json = await bdlGet(`/players?search=${encodeURIComponent(searchLast)}&per_page=100`);
+        const results: any[] = json?.data ?? [];
+        const bdlFullName = `${entry.first} ${searchLast}`.toLowerCase();
+        const stdFullName = `${entry.first} ${entry.last}`.toLowerCase();
+        const aliases: string[] = ((entry as any).aliases ?? []).map((a: string) => a.toLowerCase());
+        const match = results.find((p: any) => {
+          const n = `${p.first_name} ${p.last_name}`.toLowerCase();
+          return n === bdlFullName || n === stdFullName || aliases.includes(n);
+        });
+        if (match) {
+          resolvedIds.push({ ...entry, bdlId: Number(match.id) });
+          log(`  [retry] Resolved ${entry.first} ${entry.last} (bdlId=${match.id})`);
+        } else {
+          log(`  WARNING: Could not find BDL player for "${entry.first} ${entry.last}" (${entry.teamName})`);
+        }
+      });
+      await runConcurrent(retryTasks, 1, 2000);
+      log(`After retry: ${resolvedIds.length}/${allEntries.length} players resolved`);
+    }
 
     // ── Step 2: Fetch season averages — two clean passes ─────────────────────
     // Pass A: current season (2025-26). Pass B: fallback to 2024-25 only for
