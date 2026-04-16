@@ -68,6 +68,7 @@ import PortfolioView from '@/components/PortfolioView';
 import LeaderboardView from '@/components/LeaderboardView';
 import ProfileView from '@/components/ProfileView';
 import AboutView from '@/components/AboutView';
+import OnboardingModal, { useOnboarding } from '@/components/OnboardingModal';
 
 const SETTLEMENT_DATE = '2026-06-15T00:00:00Z';
 
@@ -424,6 +425,7 @@ function Shell() {
   }, [user, session?.access_token, router]);
 
   useAnalytics(session?.access_token ?? null, tab, approvalState === 'approved');
+  const { show: showOnboarding, dismiss: dismissOnboarding } = useOnboarding();
 
   const selectPlayer = useCallback((p: Player) => { setPid(p.id); setTab('home'); }, []);
   const back = useCallback(() => setPid(null), []);
@@ -463,12 +465,15 @@ function Shell() {
       <main className="max-w-lg mx-auto pb-24">
         {tab === 'home' && !pid && <HomeView players={players} marketCap={marketCap} sparklines={sparklines} loading={pLoading} onSelect={selectPlayer} />}
         {tab === 'home' && pid && <PlayerDetail playerId={pid} onBack={back} />}
-        {tab === 'portfolio' && <PortfolioView onSelect={selectPlayer} />}
+        {tab === 'portfolio' && <PortfolioView onSelect={selectPlayer} onGoToMarket={() => changeTab('home')} />}
         {tab === 'leaderboard' && <LeaderboardView />}
         {tab === 'profile' && <ProfileView onSignOut={signOut} />}
         {tab === 'about' && <AboutView />}
       </main>
       <BottomNav active={tab} onChange={changeTab} />
+      {showOnboarding && approvalState === 'approved' && (
+        <OnboardingModal onDone={dismissOnboarding} />
+      )}
     </div>
   );
 }

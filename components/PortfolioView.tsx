@@ -6,7 +6,7 @@ import { Player } from '@/types';
 
 const PIE = ['#00d4aa','#3b82f6','#8b5cf6','#f59e0b','#ff4757','#06b6d4','#ec4899'];
 
-export default function PortfolioView({ onSelect }: { onSelect: (p: Player) => void }) {
+export default function PortfolioView({ onSelect, onGoToMarket }: { onSelect: (p: Player) => void; onGoToMarket?: () => void }) {
   const { portfolio, loading } = usePortfolio();
 
   if (loading || !portfolio) return (
@@ -92,7 +92,25 @@ export default function PortfolioView({ onSelect }: { onSelect: (p: Player) => v
       <Card>
         <Label>Holdings</Label>
         {positions.length === 0 ? (
-          <div className="text-center py-8 text-lk-dim text-sm">No holdings. Go to Market to buy player shares.</div>
+          <div className="flex flex-col items-center py-10 px-4 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-lk-accent/10 border border-lk-accent/20 flex items-center justify-center mb-4">
+              <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#00d4aa" strokeWidth="1.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+              </svg>
+            </div>
+            <div className="text-sm font-semibold text-lk-text mb-1">No positions yet</div>
+            <div className="text-xs text-lk-dim leading-relaxed mb-5">
+              Pick a player from the market and buy your first shares.<br />Your holdings will appear here.
+            </div>
+            {onGoToMarket && (
+              <button
+                onClick={onGoToMarket}
+                className="px-5 py-2.5 rounded-xl bg-lk-accent text-lk-bg text-sm font-semibold hover:bg-lk-accent/90 transition-colors"
+              >
+                Browse the market
+              </button>
+            )}
+          </div>
         ) : (
           <div>
             {positions.map((p: any, i: number) => (
