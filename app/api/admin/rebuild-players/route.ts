@@ -187,16 +187,25 @@ function bdlHeaders(): Record<string, string> {
 }
 
 async function bdlGet(path: string, attempt = 0): Promise<any> {
-  const res = await fetch(`${BDL_BASE}${path}`, {
-    headers: bdlHeaders(),
-    cache: 'no-store',
-  });
-  if (res.status === 429 && attempt < 3) {
-    await new Promise(r => setTimeout(r, 8_000 * (attempt + 1)));
-    return bdlGet(path, attempt + 1);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${BDL_BASE}${path}`, {
+      headers: bdlHeaders(),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (res.status === 429 && attempt < 2) {
+      await wait(4000);
+      return bdlGet(path, attempt + 1);
+    }
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    clearTimeout(timer);
+    return null;
   }
-  if (!res.ok) return null;
-  return res.json();
 }
 
 function wait(ms: number) { return new Promise(r => setTimeout(r, ms)); }
@@ -272,18 +281,19 @@ export async function POST(req: NextRequest) {
       for (const p of players) allEntries.push({ teamName, ...p });
     }
 
-    // Search tasks: one per player, using FULL NAME to avoid ambiguity.
-    // Common last names (Mitchell, Green, Allen, etc.) return 10+ results;
-    // searching full name ensures we get the right player.
-    // Concurrency capped at 3 with 600ms gap to avoid 429 rate limits.
+    // Search tasks: search BDL by LAST NAME only (BDL's search does prefix
+    // matching on individual fields — full-name queries return 0 results).
+    // Use per_page=50 so common last names (Green, Mitchell, Allen) return
+    // enough results to include the right player. Require exact full-name
+    // match — no last-name-only fallback to avoid wrong-player assignments.
+    // Concurrency=5, 1200ms gap keeps us well under BDL's 60 req/min limit.
     const searchTasks = allEntries.map(entry => async () => {
-      const fullName   = `${entry.first} ${entry.last}`;
-      const searchTerm = encodeURIComponent(fullName);
-      const json = await bdlGet(`/players?search=${searchTerm}&per_page=10`);
+      const searchTerm = encodeURIComponent(entry.last);
+      const json = await bdlGet(`/players?search=${searchTerm}&per_page=50`);
       const results: any[] = json?.data ?? [];
 
-      // Exact full-name match (case-insensitive)
-      const target = fullName.toLowerCase();
+      // Require exact full-name match (case-insensitive)
+      const target = `${entry.first} ${entry.last}`.toLowerCase();
       const match = results.find((p: any) =>
         `${p.first_name} ${p.last_name}`.toLowerCase() === target
       );
@@ -291,7 +301,7 @@ export async function POST(req: NextRequest) {
       return { entry, bdlPlayer: match ?? null };
     });
 
-    const searchResults = await runConcurrent(searchTasks, 3, 600);
+    const searchResults = await runConcurrent(searchTasks, 5, 1200);
 
     // Map: "TeamName|FirstLast" → bdlPlayerId
     const resolvedIds: Array<{ teamName: string; first: string; last: string; position: string; bdlId: number }> = [];
@@ -320,7 +330,7 @@ export async function POST(req: NextRequest) {
       return { p, stats: stats24 };
     });
 
-    const statResults = await runConcurrent(statTasks, 10);
+    const statResults = await runConcurrent(statTasks, 5, 800);
     log(`Got stats for ${statResults.filter(r => r.stats).length}/${resolvedIds.length} players`);
 
     // ── Step 3: Build per-team entries ────────────────────────────────────────
