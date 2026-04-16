@@ -3,22 +3,6 @@ import { serverSupa } from '@/lib/supabase';
 
 export const maxDuration = 300;
 
-// ── Target teams ──────────────────────────────────────────────────────────────
-const TARGET_TEAMS = [
-  'Detroit Pistons',
-  'Boston Celtics',
-  'New York Knicks',
-  'Cleveland Cavaliers',
-  'Toronto Raptors',
-  'Atlanta Hawks',
-  'Oklahoma City Thunder',
-  'San Antonio Spurs',
-  'Denver Nuggets',
-  'Los Angeles Lakers',
-  'Houston Rockets',
-  'Minnesota Timberwolves',
-];
-
 // ── Pricing constants ─────────────────────────────────────────────────────────
 const K           = 5_000_000;
 const TOTAL_GAMES = 82;
@@ -28,22 +12,154 @@ const fv_scale   = 0.40;
 const min_price  = 5;
 const LEAGUE_AVG = 0.45;
 const CRED_GAMES = 20;
-const MIN_MPG    = 8;   // minimum minutes per game to be a rotation player
-const MIN_GAMES  = 3;   // minimum games played to trust the data
+const MIN_MPG    = 8;
+const MIN_GAMES  = 3;
 
-// ── Forced injections ─────────────────────────────────────────────────────────
-// Only used for genuine injury-return edge cases where BDL's season_averages
-// may not have enough games to qualify the player.
-const FORCED_ADDITIONS: Record<string, Array<{
-  name: string; position: string;
-  mpg: number; ppg: number; apg: number; rpg: number;
-  stl: number; blk: number; fga: number; fgm: number;
-  fta: number; ftm: number; tov: number; gp: number;
-  bdlId?: number;
-}>> = {
+// ── Target players per team ───────────────────────────────────────────────────
+// 10–11 players per team; top 9 by MPG are selected after fetching live stats.
+// Update this list when rosters change significantly.
+const TEAM_PLAYERS: Record<string, { first: string; last: string; position: string }[]> = {
+  'Detroit Pistons': [
+    { first: 'Cade',      last: 'Cunningham',   position: 'PG' },
+    { first: 'Jalen',     last: 'Duren',         position: 'C'  },
+    { first: 'Ausar',     last: 'Thompson',      position: 'SF' },
+    { first: 'Jaden',     last: 'Ivey',          position: 'SG' },
+    { first: 'Isaiah',    last: 'Stewart',       position: 'PF' },
+    { first: 'Tim',       last: 'Hardaway',      position: 'SG' },
+    { first: 'Simone',    last: 'Fontecchio',    position: 'SF' },
+    { first: 'Bojan',     last: 'Bogdanovic',    position: 'SF' },
+    { first: 'Ron',       last: 'Holland',       position: 'SF' },
+    { first: 'Malik',     last: 'Beasley',       position: 'SG' },
+  ],
   'Boston Celtics': [
-    // Tatum missed most of 2025-26 (Achilles, returned Mar 2026).
-    { name: 'Jayson Tatum', position: 'SF', mpg: 35.5, ppg: 30.2, apg: 5.1, rpg: 8.5, stl: 1.0, blk: 0.6, fga: 19.0, fgm: 10.0, fta: 7.5, ftm: 6.3, tov: 2.8, gp: 42 },
+    { first: 'Jayson',    last: 'Tatum',         position: 'SF' },
+    { first: 'Jaylen',    last: 'Brown',         position: 'SG' },
+    { first: 'Derrick',   last: 'White',         position: 'SG' },
+    { first: 'Jrue',      last: 'Holiday',       position: 'PG' },
+    { first: 'Kristaps',  last: 'Porzingis',     position: 'C'  },
+    { first: 'Al',        last: 'Horford',       position: 'PF' },
+    { first: 'Payton',    last: 'Pritchard',     position: 'PG' },
+    { first: 'Sam',       last: 'Hauser',        position: 'SF' },
+    { first: 'Luke',      last: 'Kornet',        position: 'C'  },
+  ],
+  'New York Knicks': [
+    { first: 'Jalen',     last: 'Brunson',       position: 'PG' },
+    { first: 'Karl-Anthony', last: 'Towns',      position: 'C'  },
+    { first: 'OG',        last: 'Anunoby',       position: 'SF' },
+    { first: 'Josh',      last: 'Hart',          position: 'SG' },
+    { first: 'Mikal',     last: 'Bridges',       position: 'SF' },
+    { first: 'Donte',     last: 'DiVincenzo',    position: 'SG' },
+    { first: 'Mitchell',  last: 'Robinson',      position: 'C'  },
+    { first: 'Precious',  last: 'Achiuwa',       position: 'PF' },
+    { first: 'Isaiah',    last: 'Hartenstein',   position: 'C'  },
+  ],
+  'Cleveland Cavaliers': [
+    { first: 'Donovan',   last: 'Mitchell',      position: 'SG' },
+    { first: 'Darius',    last: 'Garland',       position: 'PG' },
+    { first: 'Evan',      last: 'Mobley',        position: 'PF' },
+    { first: 'Jarrett',   last: 'Allen',         position: 'C'  },
+    { first: 'Max',       last: 'Strus',         position: 'SG' },
+    { first: 'Caris',     last: 'LeVert',        position: 'SG' },
+    { first: 'Isaac',     last: 'Okoro',         position: 'SF' },
+    { first: 'Sam',       last: 'Merrill',       position: 'SG' },
+    { first: 'Dean',      last: 'Wade',          position: 'SF' },
+    { first: 'Georges',   last: 'Niang',         position: 'PF' },
+  ],
+  'Toronto Raptors': [
+    { first: 'Scottie',   last: 'Barnes',        position: 'SF' },
+    { first: 'RJ',        last: 'Barrett',       position: 'SG' },
+    { first: 'Immanuel',  last: 'Quickley',      position: 'PG' },
+    { first: 'Jakob',     last: 'Poeltl',        position: 'C'  },
+    { first: 'Gary',      last: 'Trent',         position: 'SG' },
+    { first: 'Gradey',    last: 'Dick',          position: 'SG' },
+    { first: 'Ochai',     last: 'Agbaji',        position: 'SF' },
+    { first: 'Javon',     last: 'Freeman-Liberty', position: 'SG' },
+    { first: 'Kelly',     last: 'Olynyk',        position: 'PF' },
+    { first: 'Chris',     last: 'Boucher',       position: 'PF' },
+  ],
+  'Atlanta Hawks': [
+    { first: 'Trae',      last: 'Young',         position: 'PG' },
+    { first: 'Dejounte',  last: 'Murray',        position: 'SG' },
+    { first: 'Jalen',     last: 'Johnson',       position: 'SF' },
+    { first: 'Clint',     last: 'Capela',        position: 'C'  },
+    { first: "De'Andre",  last: 'Hunter',        position: 'SF' },
+    { first: 'Bogdan',    last: 'Bogdanovic',    position: 'SG' },
+    { first: 'Onyeka',    last: 'Okongwu',       position: 'C'  },
+    { first: 'Larry',     last: 'Nance',         position: 'PF' },
+    { first: 'Kobe',      last: 'Bufkin',        position: 'SG' },
+    { first: 'Saddiq',    last: 'Bey',           position: 'SF' },
+  ],
+  'Oklahoma City Thunder': [
+    { first: 'Shai',      last: 'Gilgeous-Alexander', position: 'PG' },
+    { first: 'Jalen',     last: 'Williams',      position: 'SG' },
+    { first: 'Chet',      last: 'Holmgren',      position: 'C'  },
+    { first: 'Lu',        last: 'Dort',          position: 'SG' },
+    { first: 'Isaiah',    last: 'Hartenstein',   position: 'C'  },
+    { first: 'Aaron',     last: 'Wiggins',       position: 'SF' },
+    { first: 'Isaiah',    last: 'Joe',           position: 'SG' },
+    { first: 'Ousmane',   last: 'Dieng',         position: 'SF' },
+    { first: 'Cason',     last: 'Wallace',       position: 'PG' },
+    { first: 'Alex',      last: 'Caruso',        position: 'SG' },
+  ],
+  'San Antonio Spurs': [
+    { first: 'Victor',    last: 'Wembanyama',    position: 'C'  },
+    { first: 'Devin',     last: 'Vassell',       position: 'SG' },
+    { first: 'Keldon',    last: 'Johnson',       position: 'SF' },
+    { first: 'Jeremy',    last: 'Sochan',        position: 'PF' },
+    { first: 'Tre',       last: 'Jones',         position: 'PG' },
+    { first: 'Malaki',    last: 'Branham',       position: 'SG' },
+    { first: 'Blake',     last: 'Wesley',        position: 'SG' },
+    { first: 'Julian',    last: 'Champagnie',    position: 'SF' },
+    { first: 'Harrison',  last: 'Barnes',        position: 'SF' },
+    { first: 'Charles',   last: 'Bassey',        position: 'C'  },
+  ],
+  'Denver Nuggets': [
+    { first: 'Nikola',    last: 'Jokic',         position: 'C'  },
+    { first: 'Jamal',     last: 'Murray',        position: 'PG' },
+    { first: 'Michael',   last: 'Porter',        position: 'SF' },
+    { first: 'Aaron',     last: 'Gordon',        position: 'PF' },
+    { first: 'Kentavious', last: 'Caldwell-Pope', position: 'SG' },
+    { first: 'Reggie',    last: 'Jackson',       position: 'PG' },
+    { first: 'Peyton',    last: 'Watson',        position: 'SF' },
+    { first: 'Justin',    last: 'Holiday',       position: 'SG' },
+    { first: 'Russell',   last: 'Westbrook',     position: 'PG' },
+    { first: 'Zeke',      last: 'Nnaji',         position: 'PF' },
+  ],
+  'Los Angeles Lakers': [
+    { first: 'LeBron',    last: 'James',         position: 'SF' },
+    { first: 'Anthony',   last: 'Davis',         position: 'C'  },
+    { first: 'Austin',    last: 'Reaves',        position: 'SG' },
+    { first: "D'Angelo",  last: 'Russell',       position: 'PG' },
+    { first: 'Rui',       last: 'Hachimura',     position: 'SF' },
+    { first: 'Jarred',    last: 'Vanderbilt',    position: 'PF' },
+    { first: 'Taurean',   last: 'Prince',        position: 'SF' },
+    { first: 'Max',       last: 'Christie',      position: 'SG' },
+    { first: 'Gabe',      last: 'Vincent',       position: 'PG' },
+    { first: 'Cam',       last: 'Whitmore',      position: 'SG' },
+  ],
+  'Houston Rockets': [
+    { first: 'Alperen',   last: 'Sengun',        position: 'C'  },
+    { first: 'Jalen',     last: 'Green',         position: 'SG' },
+    { first: 'Fred',      last: 'VanVleet',      position: 'PG' },
+    { first: 'Dillon',    last: 'Brooks',        position: 'SF' },
+    { first: 'Jabari',    last: 'Smith',         position: 'PF' },
+    { first: 'Amen',      last: 'Thompson',      position: 'PF' },
+    { first: 'Tari',      last: 'Eason',         position: 'SF' },
+    { first: 'Jeff',      last: 'Green',         position: 'PF' },
+    { first: 'Cam',       last: 'Whitmore',      position: 'SG' },
+    { first: 'Aaron',     last: 'Holiday',       position: 'PG' },
+  ],
+  'Minnesota Timberwolves': [
+    { first: 'Anthony',   last: 'Edwards',       position: 'SG' },
+    { first: 'Rudy',      last: 'Gobert',        position: 'C'  },
+    { first: 'Naz',       last: 'Reid',          position: 'PF' },
+    { first: 'Jaden',     last: 'McDaniels',     position: 'SF' },
+    { first: 'Mike',      last: 'Conley',        position: 'PG' },
+    { first: 'Julius',    last: 'Randle',        position: 'PF' },
+    { first: 'Nickeil',   last: 'Alexander-Walker', position: 'SG' },
+    { first: 'Rob',       last: 'Dillingham',    position: 'PG' },
+    { first: 'Kyle',      last: 'Anderson',      position: 'SF' },
+    { first: 'Joe',       last: 'Ingles',        position: 'SF' },
   ],
 };
 
@@ -62,7 +178,7 @@ async function bdlGet(path: string, attempt = 0): Promise<any> {
     cache: 'no-store',
   });
   if (res.status === 429 && attempt < 3) {
-    await new Promise(r => setTimeout(r, 10_000 * (attempt + 1)));
+    await new Promise(r => setTimeout(r, 8_000 * (attempt + 1)));
     return bdlGet(path, attempt + 1);
   }
   if (!res.ok) return null;
@@ -101,38 +217,19 @@ function computePools(price: number) {
   };
 }
 
-// Concurrent fetch of season averages — 20 players at a time.
-// BDL v1 /season_averages only supports a single player_id per call,
-// so we parallelise to avoid sequential 1100ms-per-player timeout.
-// Most calls for historical/inactive players return empty and resolve fast.
-async function fetchSeasonAveragesConcurrent(
-  playerIds: number[],
-  season: number,
-  log: (msg: string) => void,
-): Promise<Map<number, any>> {
-  const statsMap = new Map<number, any>();
-  const CONCURRENCY = 20;
-
-  for (let i = 0; i < playerIds.length; i += CONCURRENCY) {
-    const chunk = playerIds.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(
-      chunk.map(pid =>
-        bdlGet(`/season_averages?season=${season}&player_id=${pid}`)
-          .then(json => ({ pid, row: json?.data?.[0] ?? null }))
-          .catch(() => ({ pid, row: null }))
-      )
-    );
-    for (const { pid, row } of results) {
-      if (row) statsMap.set(pid, row);
-    }
-    if (i % (CONCURRENCY * 5) === 0) {
-      log(`  Stats progress: ${Math.min(i + CONCURRENCY, playerIds.length)}/${playerIds.length} (${statsMap.size} with data)`);
-    }
-    // Small gap between batches so we don't burst-trigger 429
-    if (i + CONCURRENCY < playerIds.length) await wait(300);
+// Run an array of async tasks with limited concurrency
+async function runConcurrent<T>(
+  tasks: (() => Promise<T>)[],
+  concurrency: number,
+): Promise<T[]> {
+  const results: T[] = [];
+  for (let i = 0; i < tasks.length; i += concurrency) {
+    const batch = tasks.slice(i, i + concurrency);
+    const batchResults = await Promise.all(batch.map(t => t()));
+    results.push(...batchResults);
+    if (i + concurrency < tasks.length) await wait(200);
   }
-
-  return statsMap;
+  return results;
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -148,149 +245,112 @@ export async function POST(req: NextRequest) {
   try {
     const db = serverSupa();
 
-    // ── Step 1: Resolve BDL team IDs ─────────────────────────────────────────
-    log('Fetching BDL team list...');
-    const teamsJson = await bdlGet('/teams?per_page=100');
-    if (!teamsJson?.data) throw new Error('Failed to fetch BDL teams');
+    // ── Step 1: Resolve BDL player IDs via name search ────────────────────────
+    // Search for each hardcoded player by last name, match by full name.
+    // ~120 searches total → 20 concurrent = ~6 rounds × ~300ms = ~2s
+    log('Resolving BDL player IDs...');
 
-    const bdlTeamMap = new Map<string, number>();
-    for (const t of teamsJson.data) bdlTeamMap.set(t.full_name, t.id);
-
-    const resolvedTeams: Array<{ name: string; bdlId: number }> = [];
-    for (const teamName of TARGET_TEAMS) {
-      const bdlId = bdlTeamMap.get(teamName);
-      if (!bdlId) { log(`WARNING: No BDL team ID for "${teamName}"`); continue; }
-      resolvedTeams.push({ name: teamName, bdlId });
-    }
-    log(`Resolved ${resolvedTeams.length}/${TARGET_TEAMS.length} teams`);
-
-    // ── Step 2: Fetch all rosters (one call per team, 600ms gap) ─────────────
-    //
-    // Strategy to avoid timeout:
-    //   1. Fetch all 12 rosters sequentially (12 calls, ~8 seconds total)
-    //   2. Collect all unique player IDs across all rosters
-    //   3. Batch-fetch season_averages in chunks of 50 (3-4 calls, ~3 seconds)
-    //   4. Assign stats back to team rosters
-    //
-    // This replaces the old 180+ sequential calls (one per player) which
-    // took 200+ seconds and caused FUNCTION_INVOCATION_TIMEOUT.
-
-    // roster map: teamName → array of raw BDL player objects
-    const rosterByTeam = new Map<string, any[]>();
-
-    for (const team of resolvedTeams) {
-      log(`[${team.name}] Fetching roster...`);
-      await wait(600);
-      const rosterJson = await bdlGet(`/players?team_ids[]=${team.bdlId}&per_page=100`);
-      const roster: any[] = rosterJson?.data ?? [];
-      rosterByTeam.set(team.name, roster);
-      log(`  ${roster.length} players on roster`);
+    type NameEntry = { teamName: string; first: string; last: string; position: string };
+    const allEntries: NameEntry[] = [];
+    for (const [teamName, players] of Object.entries(TEAM_PLAYERS)) {
+      for (const p of players) allEntries.push({ teamName, ...p });
     }
 
-    // Collect all unique player IDs across all rosters
-    const allPlayerIds: number[] = [];
-    const seenIds = new Set<number>();
-    for (const roster of rosterByTeam.values()) {
-      for (const p of roster) {
-        const pid = Number(p.id);
-        if (!seenIds.has(pid)) { seenIds.add(pid); allPlayerIds.push(pid); }
+    // Search tasks: one per player
+    const searchTasks = allEntries.map(entry => async () => {
+      const searchTerm = encodeURIComponent(entry.last);
+      const json = await bdlGet(`/players?search=${searchTerm}&per_page=10`);
+      const results: any[] = json?.data ?? [];
+
+      // Find best name match (case-insensitive full name)
+      const target = `${entry.first} ${entry.last}`.toLowerCase();
+      const match = results.find((p: any) =>
+        `${p.first_name} ${p.last_name}`.toLowerCase() === target
+      ) ?? results.find((p: any) =>
+        p.last_name.toLowerCase() === entry.last.toLowerCase()
+      );
+
+      return { entry, bdlPlayer: match ?? null };
+    });
+
+    const searchResults = await runConcurrent(searchTasks, 20);
+
+    // Map: "TeamName|FirstLast" → bdlPlayerId
+    const resolvedIds: Array<{ teamName: string; first: string; last: string; position: string; bdlId: number }> = [];
+    for (const { entry, bdlPlayer } of searchResults) {
+      if (bdlPlayer) {
+        resolvedIds.push({ ...entry, bdlId: Number(bdlPlayer.id) });
+      } else {
+        log(`  WARNING: Could not find BDL player for "${entry.first} ${entry.last}" (${entry.teamName})`);
       }
     }
-    log(`Total unique roster players to fetch stats for: ${allPlayerIds.length}`);
+    log(`Resolved ${resolvedIds.length}/${allEntries.length} players via BDL search`);
 
-    // ── Step 3: Concurrent-fetch season averages ──────────────────────────────
-    const statsMap = await fetchSeasonAveragesConcurrent(allPlayerIds, 2025, log);
-    log(`Got season averages for ${statsMap.size} players`);
+    // ── Step 2: Fetch season averages concurrently ────────────────────────────
+    // ~120 stat fetches → 20 concurrent = ~6 rounds × ~300ms = ~2s
+    log('Fetching 2025-26 season averages...');
 
-    // ── Step 4: Build per-team player entries ─────────────────────────────────
+    const statTasks = resolvedIds.map(p => async () => {
+      const json = await bdlGet(`/season_averages?season=2025&player_id=${p.bdlId}`);
+      return { p, stats: json?.data?.[0] ?? null };
+    });
+
+    const statResults = await runConcurrent(statTasks, 20);
+    log(`Got stats for ${statResults.filter(r => r.stats).length}/${resolvedIds.length} players`);
+
+    // ── Step 3: Build per-team entries ────────────────────────────────────────
     type PlayerEntry = {
       bdlPlayerId: number; name: string; position: string; teamName: string;
       mpg: number; ppg: number; apg: number; rpg: number; eff: number; gp: number;
     };
 
     const byTeam = new Map<string, PlayerEntry[]>();
+    for (const teamName of Object.keys(TEAM_PLAYERS)) byTeam.set(teamName, []);
 
-    for (const team of resolvedTeams) {
-      const roster = rosterByTeam.get(team.name) ?? [];
-      const teamPlayers: PlayerEntry[] = [];
+    for (const { p, stats } of statResults) {
+      if (!stats) continue;
 
-      for (const player of roster) {
-        const pid   = Number(player.id);
-        const stats = statsMap.get(pid);
-        if (!stats) continue;
+      const mpg = parseMinutes(stats.min);
+      const gp  = Number(stats.games_played ?? 0);
+      if (mpg < MIN_MPG || gp < MIN_GAMES) continue;
 
-        const mpg = parseMinutes(stats.min);
-        const gp  = Number(stats.games_played ?? 0);
-        if (mpg < MIN_MPG || gp < MIN_GAMES) continue;
+      const ppg = parseFloat(Number(stats.pts      ?? 0).toFixed(1));
+      const apg = parseFloat(Number(stats.ast      ?? 0).toFixed(1));
+      const rpg = parseFloat(Number(stats.reb      ?? 0).toFixed(1));
+      const stl = Number(stats.stl      ?? 0);
+      const blk = Number(stats.blk      ?? 0);
+      const fga = Number(stats.fga      ?? 0);
+      const fgm = Number(stats.fgm      ?? 0);
+      const fta = Number(stats.fta      ?? 0);
+      const ftm = Number(stats.ftm      ?? 0);
+      const tov = Number(stats.turnover ?? stats.tov ?? 0);
+      const effRaw = ppg + rpg + apg + stl + blk - (fga - fgm) - (fta - ftm) - tov;
 
-        const ppg = parseFloat(Number(stats.pts      ?? 0).toFixed(1));
-        const apg = parseFloat(Number(stats.ast      ?? 0).toFixed(1));
-        const rpg = parseFloat(Number(stats.reb      ?? 0).toFixed(1));
-        const stl = Number(stats.stl      ?? 0);
-        const blk = Number(stats.blk      ?? 0);
-        const fga = Number(stats.fga      ?? 0);
-        const fgm = Number(stats.fgm      ?? 0);
-        const fta = Number(stats.fta      ?? 0);
-        const ftm = Number(stats.ftm      ?? 0);
-        const tov = Number(stats.turnover ?? stats.tov ?? 0);
-
-        const effRaw = ppg + rpg + apg + stl + blk - (fga - fgm) - (fta - ftm) - tov;
-        const eff    = parseFloat(effRaw.toFixed(1));
-
-        const fullName = `${player.first_name || ''} ${player.last_name || ''}`.trim();
-        const position = player.position || 'F';
-
-        teamPlayers.push({
-          bdlPlayerId: pid, name: fullName, position,
-          teamName: team.name, mpg, ppg, apg, rpg, eff, gp,
+      const arr = byTeam.get(p.teamName);
+      if (arr) {
+        arr.push({
+          bdlPlayerId: p.bdlId,
+          name:      `${p.first} ${p.last}`,
+          position:  p.position,
+          teamName:  p.teamName,
+          mpg, ppg, apg, rpg,
+          eff: parseFloat(effRaw.toFixed(1)), gp,
         });
       }
-
-      log(`[${team.name}] ${teamPlayers.length} qualified players (≥${MIN_MPG}mpg, ≥${MIN_GAMES}gp)`);
-
-      // ── Inject forced additions for this team ─────────────────────────────
-      const forced = FORCED_ADDITIONS[team.name] ?? [];
-      for (const h of forced) {
-        const alreadyHave = teamPlayers.some(p => p.name.toLowerCase() === h.name.toLowerCase());
-        if (alreadyHave) {
-          log(`  [forced] ${h.name} already in live data — using real stats`);
-          continue;
-        }
-
-        const bdlIdFromRoster = h.bdlId ?? (() => {
-          const roster = rosterByTeam.get(team.name) ?? [];
-          const match  = roster.find((p: any) =>
-            `${p.first_name} ${p.last_name}`.toLowerCase() === h.name.toLowerCase()
-          );
-          return match ? Number(match.id) : null;
-        })();
-
-        const effRaw = h.ppg + h.rpg + h.apg + h.stl + h.blk - (h.fga - h.fgm) - (h.fta - h.ftm) - h.tov;
-        teamPlayers.push({
-          bdlPlayerId: bdlIdFromRoster ?? -(Date.now()),
-          name: h.name, position: h.position, teamName: team.name,
-          mpg: h.mpg, ppg: h.ppg, apg: h.apg, rpg: h.rpg,
-          eff: parseFloat(effRaw.toFixed(1)), gp: h.gp,
-        });
-        log(`  [forced] Injected ${h.name} (BDL ID: ${bdlIdFromRoster ?? 'synthetic'})`);
-      }
-
-      // Sort by MPG descending, take top 9
-      teamPlayers.sort((a, b) => b.mpg - a.mpg || b.ppg - a.ppg);
-      const top9 = teamPlayers.slice(0, 9);
-      byTeam.set(team.name, top9);
-
-      log(`  Top 9: ${top9.map(p => `${p.name} (${p.mpg.toFixed(1)}mpg ${p.ppg}ppg)`).join(', ')}`);
-      if (top9.length < 9) log(`  ⚠ Only ${top9.length} players — check BDL roster data`);
     }
 
-    // ── Step 5: Flatten and validate ─────────────────────────────────────────
+    // Sort each team by MPG desc, take top 9
     const finalPlayers: PlayerEntry[] = [];
     const teamBreakdown: Record<string, string[]> = {};
 
     for (const [teamName, players] of byTeam) {
-      finalPlayers.push(...players);
-      teamBreakdown[teamName] = players.map(p => `${p.name} (${p.mpg.toFixed(1)}mpg, ${p.ppg}ppg)`);
+      players.sort((a, b) => b.mpg - a.mpg || b.ppg - a.ppg);
+      const top9 = players.slice(0, 9);
+      byTeam.set(teamName, top9);
+      finalPlayers.push(...top9);
+      teamBreakdown[teamName] = top9.map(p => `${p.name} (${p.mpg.toFixed(1)}mpg, ${p.ppg}ppg)`);
+      log(`[${teamName}] top ${top9.length}: ${top9.map(p => p.name).join(', ')}`);
+      if (top9.length < 9) log(`  ⚠ Only ${top9.length} qualified players`);
     }
 
     log(`Total players selected: ${finalPlayers.length}`);
@@ -298,13 +358,13 @@ export async function POST(req: NextRequest) {
       throw new Error('No players selected — check BDL API key and season 2025 data.');
     }
 
-    // ── Step 6: Delete existing players ──────────────────────────────────────
+    // ── Step 4: Delete existing players ──────────────────────────────────────
     log('Deleting all existing players...');
     const { error: deleteErr } = await db.from('players').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     if (deleteErr) throw new Error(`Delete failed: ${deleteErr.message}`);
     log('Deleted.');
 
-    // ── Step 7: Insert ────────────────────────────────────────────────────────
+    // ── Step 5: Insert ────────────────────────────────────────────────────────
     log('Inserting new players...');
     const now = new Date().toISOString();
     const inserts = finalPlayers.map(p => {
@@ -331,7 +391,7 @@ export async function POST(req: NextRequest) {
     if (insertErr) throw new Error(`Insert failed: ${insertErr.message}`);
     log(`Inserted ${inserts.length} players.`);
 
-    // ── Step 8: Validate ──────────────────────────────────────────────────────
+    // ── Step 6: Validate ──────────────────────────────────────────────────────
     const { data: countRows } = await db.from('players').select('team');
     const totalCount = countRows?.length ?? 0;
     const teamCountMap: Record<string, number> = {};
