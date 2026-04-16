@@ -33,7 +33,8 @@ const NF = [
 
 async function handleTick(req: NextRequest) {
   const cronSecret   = req.headers.get('x-cron-secret');
-  const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+  const isVercelCron = req.headers.get('x-vercel-cron') === '1'
+    || (req.headers.get('user-agent') ?? '').startsWith('vercel-cron/');
   const validCron    = isVercelCron || (!!process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET);
   if (!validCron) {
     // Non-cron callers must be approved users (not just any valid JWT)
