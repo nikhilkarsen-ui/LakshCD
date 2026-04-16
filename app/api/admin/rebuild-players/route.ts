@@ -16,175 +16,96 @@ const MIN_MPG    = 8;
 const MIN_GAMES  = 3;
 
 // ── Target players per team ───────────────────────────────────────────────────
-// 10–12 players per team; top 9 by MPG are selected after fetching live stats.
-// bdlLast: override when BDL stores a different last name (Jr. suffix, etc.)
-// aliases: additional full-name spellings BDL might use
+// Exactly 5 players per team; all 5 are selected (no MPG culling).
+// bdlLast: override search term when BDL stores a different last name.
+// aliases: additional full-name spellings BDL might return.
 const TEAM_PLAYERS: Record<string, {
   first: string; last: string; position: string;
   bdlLast?: string; aliases?: string[];
 }[]> = {
   'Detroit Pistons': [
-    { first: 'Cade',      last: 'Cunningham',   position: 'PG' },
-    { first: 'Jalen',     last: 'Duren',        position: 'C'  },
-    { first: 'Ausar',     last: 'Thompson',     position: 'SF' },
-    { first: 'Jaden',     last: 'Ivey',         position: 'SG' },
-    { first: 'Isaiah',    last: 'Stewart',      position: 'PF' },
-    { first: 'Tim',       last: 'Hardaway',     position: 'SG', aliases: ['Tim Hardaway Jr.'] },
-    { first: 'Simone',    last: 'Fontecchio',   position: 'SF' },
-    { first: 'Bojan',     last: 'Bogdanovic',   position: 'SF' },
-    { first: 'Ron',       last: 'Holland',      position: 'SF' },
-    { first: 'Malik',     last: 'Beasley',      position: 'SG' },
-    { first: 'Dennis',    last: 'Schroder',     position: 'PG' },
-    { first: 'Marcus',    last: 'Sasser',       position: 'SG' },
+    { first: 'Cade',       last: 'Cunningham',  position: 'PG' },
+    { first: 'Caris',      last: 'LeVert',      position: 'SG' },
+    { first: 'Paul',       last: 'Reed',        position: 'PF' },
+    { first: 'Tobias',     last: 'Harris',      position: 'SF' },
+    { first: 'Isaiah',     last: 'Stewart',     position: 'C'  },
   ],
   'Boston Celtics': [
-    { first: 'Jayson',    last: 'Tatum',        position: 'SF' },
-    { first: 'Jaylen',    last: 'Brown',        position: 'SG' },
-    { first: 'Derrick',   last: 'White',        position: 'SG' },
-    { first: 'Jrue',      last: 'Holiday',      position: 'PG' },
-    { first: 'Kristaps',  last: 'Porzingis',    position: 'C'  },
-    { first: 'Al',        last: 'Horford',      position: 'PF' },
-    { first: 'Payton',    last: 'Pritchard',    position: 'PG' },
-    { first: 'Sam',       last: 'Hauser',       position: 'SF' },
-    { first: 'Luke',      last: 'Kornet',       position: 'C'  },
-    { first: 'Xavier',    last: 'Tillman',      position: 'PF' },
+    { first: 'Jayson',     last: 'Tatum',       position: 'SF' },
+    { first: 'Jaylen',     last: 'Brown',       position: 'SG' },
+    { first: 'Derrick',    last: 'White',       position: 'SG' },
+    { first: 'Nicola',     last: 'Vucevic',     position: 'C',  aliases: ['Nikola Vucevic'] },
+    { first: 'Sam',        last: 'Hauser',      position: 'SF' },
   ],
   'New York Knicks': [
-    { first: 'Jalen',     last: 'Brunson',      position: 'PG' },
+    { first: 'Jalen',      last: 'Brunson',     position: 'PG' },
     { first: 'Karl-Anthony', last: 'Towns',     position: 'C'  },
-    { first: 'OG',        last: 'Anunoby',      position: 'SF' },
-    { first: 'Josh',      last: 'Hart',         position: 'SG' },
-    { first: 'Mikal',     last: 'Bridges',      position: 'SF' },
-    { first: 'Mitchell',  last: 'Robinson',     position: 'C'  },
-    { first: 'Precious',  last: 'Achiuwa',      position: 'PF' },
-    { first: 'Miles',     last: 'McBride',      position: 'PG' },
-    { first: 'Landry',    last: 'Shamet',       position: 'SG' },
+    { first: 'Jose',       last: 'Alvarado',    position: 'PG' },
+    { first: 'Tyler',      last: 'Kolek',       position: 'PG' },
+    { first: 'Miles',      last: 'McBride',     position: 'PG' },
   ],
   'Cleveland Cavaliers': [
-    { first: 'Donovan',   last: 'Mitchell',     position: 'SG' },
-    { first: 'Darius',    last: 'Garland',      position: 'PG' },
-    { first: 'Evan',      last: 'Mobley',       position: 'PF' },
-    { first: 'Jarrett',   last: 'Allen',        position: 'C'  },
-    { first: 'Max',       last: 'Strus',        position: 'SG' },
-    { first: 'Caris',     last: 'LeVert',       position: 'SG' },
-    { first: 'Isaac',     last: 'Okoro',        position: 'SF' },
-    { first: 'Sam',       last: 'Merrill',      position: 'SG' },
-    { first: 'Dean',      last: 'Wade',         position: 'SF' },
-    { first: 'Georges',   last: 'Niang',        position: 'PF' },
-    { first: 'Craig',     last: 'Porter',       position: 'PG' },
+    { first: 'Donovan',    last: 'Mitchell',    position: 'SG' },
+    { first: 'Evan',       last: 'Mobley',      position: 'PF' },
+    { first: 'Jarrett',    last: 'Allen',       position: 'C'  },
+    { first: 'James',      last: 'Harden',      position: 'PG' },
+    { first: 'Dean',       last: 'Wade',        position: 'SF' },
   ],
   'Toronto Raptors': [
-    { first: 'Scottie',   last: 'Barnes',       position: 'SF' },
-    { first: 'RJ',        last: 'Barrett',      position: 'SG' },
-    { first: 'Immanuel',  last: 'Quickley',     position: 'PG' },
-    { first: 'Jakob',     last: 'Poeltl',       position: 'C'  },
-    { first: 'Gary',      last: 'Trent',        position: 'SG', aliases: ['Gary Trent Jr.'] },
-    { first: 'Gradey',    last: 'Dick',         position: 'SG' },
-    { first: 'Ochai',     last: 'Agbaji',       position: 'SF' },
-    { first: 'Javon',     last: 'Freeman-Liberty', position: 'SG' },
-    { first: 'Kelly',     last: 'Olynyk',       position: 'PF' },
-    { first: 'Chris',     last: 'Boucher',      position: 'PF' },
-    { first: 'Bruce',     last: 'Brown',        position: 'SF' },
+    { first: 'Scottie',    last: 'Barnes',      position: 'SF' },
+    { first: 'Brandon',    last: 'Ingram',      position: 'SF' },
+    { first: 'Jamal',      last: 'Shead',       position: 'PG' },
+    { first: "Ja'Kobe",    last: 'Walter',      position: 'SG' },
+    { first: 'A.J.',       last: 'Lawson',      position: 'SF', aliases: ['AJ Lawson'] },
   ],
   'Atlanta Hawks': [
-    { first: 'Trae',      last: 'Young',        position: 'PG' },
-    { first: 'Dejounte',  last: 'Murray',       position: 'SG' },
-    { first: 'Jalen',     last: 'Johnson',      position: 'SF' },
-    { first: 'Clint',     last: 'Capela',       position: 'C'  },
-    { first: 'De\'Andre', last: 'Hunter',       position: 'SF' },
-    { first: 'Bogdan',    last: 'Bogdanovic',   position: 'SG' },
-    { first: 'Onyeka',    last: 'Okongwu',      position: 'C'  },
-    { first: 'Larry',     last: 'Nance',        position: 'PF', aliases: ['Larry Nance Jr.'] },
-    { first: 'Kobe',      last: 'Bufkin',       position: 'SG' },
-    { first: 'Saddiq',    last: 'Bey',          position: 'SF' },
-    { first: 'Dyson',     last: 'Daniels',      position: 'SG' },
-    { first: 'AJ',        last: 'Griffin',      position: 'SF' },
-    { first: 'Garrison',  last: 'Mathews',      position: 'SG' },
-    { first: 'Bruno',     last: 'Fernando',     position: 'C'  },
+    { first: 'Jalen',      last: 'Johnson',     position: 'SF' },
+    { first: 'C.J.',       last: 'McCollum',    position: 'SG', aliases: ['CJ McCollum'] },
+    { first: 'Nickeil',    last: 'Alexander-Walker', position: 'SG' },
+    { first: 'Dyson',      last: 'Daniels',     position: 'SG' },
+    { first: 'Onyeka',     last: 'Okongwu',     position: 'C'  },
   ],
   'Oklahoma City Thunder': [
-    { first: 'Shai',      last: 'Gilgeous-Alexander', position: 'PG' },
-    { first: 'Jalen',     last: 'Williams',     position: 'SG' },
-    { first: 'Chet',      last: 'Holmgren',     position: 'C'  },
-    { first: 'Lu',        last: 'Dort',         position: 'SG', aliases: ['Luguentz Dort'] },
-    { first: 'Isaiah',    last: 'Hartenstein',  position: 'C'  },
-    { first: 'Aaron',     last: 'Wiggins',      position: 'SF' },
-    { first: 'Isaiah',    last: 'Joe',          position: 'SG' },
-    { first: 'Cason',     last: 'Wallace',      position: 'PG' },
-    { first: 'Alex',      last: 'Caruso',       position: 'SG' },
-    { first: 'Ousmane',   last: 'Dieng',        position: 'SF' },
+    { first: 'Shai',       last: 'Gilgeous-Alexander', position: 'PG' },
+    { first: 'Chet',       last: 'Holmgren',    position: 'C'  },
+    { first: 'Jalen',      last: 'Williams',    position: 'SG' },
+    { first: 'Luguentz',   last: 'Dort',        position: 'SG', aliases: ['Lu Dort'] },
+    { first: 'Isaiah',     last: 'Hartenstein', position: 'C'  },
   ],
   'San Antonio Spurs': [
-    { first: 'Victor',    last: 'Wembanyama',   position: 'C'  },
-    { first: 'Devin',     last: 'Vassell',      position: 'SG' },
-    { first: 'Keldon',    last: 'Johnson',      position: 'SF' },
-    { first: 'Jeremy',    last: 'Sochan',       position: 'PF' },
-    { first: 'Tre',       last: 'Jones',        position: 'PG' },
-    { first: 'Malaki',    last: 'Branham',      position: 'SG' },
-    { first: 'Blake',     last: 'Wesley',       position: 'SG' },
-    { first: 'Julian',    last: 'Champagnie',   position: 'SF' },
-    { first: 'Harrison',  last: 'Barnes',       position: 'SF' },
-    { first: 'Charles',   last: 'Bassey',       position: 'C'  },
-    { first: 'Zach',      last: 'Collins',      position: 'PF' },
-    { first: 'Stephon',   last: 'Castle',       position: 'PG' },
+    { first: 'Victor',     last: 'Wembanyama',  position: 'C'  },
+    { first: "De'Aaron",   last: 'Fox',         position: 'PG' },
+    { first: 'Devin',      last: 'Vassell',     position: 'SG' },
+    { first: 'Stephon',    last: 'Castle',      position: 'PG' },
+    { first: 'Julian',     last: 'Champagnie',  position: 'SF' },
   ],
   'Denver Nuggets': [
-    { first: 'Nikola',    last: 'Jokic',        position: 'C'  },
-    { first: 'Jamal',     last: 'Murray',       position: 'PG' },
-    { first: 'Michael',   last: 'Porter',       position: 'SF', aliases: ['Michael Porter Jr.'] },
-    { first: 'Aaron',     last: 'Gordon',       position: 'PF' },
-    { first: 'Kentavious', last: 'Caldwell-Pope', position: 'SG' },
-    { first: 'Reggie',    last: 'Jackson',      position: 'PG' },
-    { first: 'Peyton',    last: 'Watson',       position: 'SF' },
-    { first: 'Justin',    last: 'Holiday',      position: 'SG' },
-    { first: 'Russell',   last: 'Westbrook',    position: 'PG' },
-    { first: 'Zeke',      last: 'Nnaji',        position: 'PF' },
-    { first: 'DeAndre',   last: 'Jordan',       position: 'C'  },
+    { first: 'Nikola',     last: 'Jokić',       position: 'C',  bdlLast: 'Jokic', aliases: ['Nikola Jokic'] },
+    { first: 'Jamal',      last: 'Murray',      position: 'PG' },
+    { first: 'Aaron',      last: 'Gordon',      position: 'PF' },
+    { first: 'Cameron',    last: 'Johnson',     position: 'SF' },
+    { first: 'Christian',  last: 'Braun',       position: 'SG' },
   ],
   'Los Angeles Lakers': [
-    { first: 'LeBron',    last: 'James',        position: 'SF' },
-    { first: 'Anthony',   last: 'Davis',        position: 'C'  },
-    { first: 'Austin',    last: 'Reaves',       position: 'SG' },
-    { first: 'D\'Angelo', last: 'Russell',      position: 'PG' },
-    { first: 'Rui',       last: 'Hachimura',    position: 'SF' },
-    { first: 'Jarred',    last: 'Vanderbilt',   position: 'PF' },
-    { first: 'Taurean',   last: 'Prince',       position: 'SF' },
-    { first: 'Max',       last: 'Christie',     position: 'SG' },
-    { first: 'Dalton',    last: 'Knecht',       position: 'SG' },
-    { first: 'Gabe',      last: 'Vincent',      position: 'PG' },
-    { first: 'Christian', last: 'Wood',         position: 'PF' },
+    { first: 'LeBron',     last: 'James',       position: 'SF' },
+    { first: 'Deandre',    last: 'Ayton',       position: 'C'  },
+    { first: 'Marcus',     last: 'Smart',       position: 'PG' },
+    { first: 'Luke',       last: 'Kennard',     position: 'SG' },
+    { first: 'Rui',        last: 'Hachimura',   position: 'SF' },
   ],
   'Houston Rockets': [
-    { first: 'Alperen',   last: 'Sengun',       position: 'C'  },
-    { first: 'Jalen',     last: 'Green',        position: 'SG' },
-    { first: 'Fred',      last: 'VanVleet',     position: 'PG' },
-    { first: 'Dillon',    last: 'Brooks',       position: 'SF' },
-    { first: 'Jabari',    last: 'Smith',        position: 'PF' },
-    { first: 'Amen',      last: 'Thompson',     position: 'PF' },
-    { first: 'Tari',      last: 'Eason',        position: 'SF' },
-    { first: 'Jeff',      last: 'Green',        position: 'PF' },
-    { first: 'Cam',       last: 'Whitmore',     position: 'SG' },
-    { first: 'Aaron',     last: 'Holiday',      position: 'PG' },
-    { first: 'Steven',    last: 'Adams',        position: 'C'  },
+    { first: 'Kevin',      last: 'Durant',      position: 'SF' },
+    { first: 'Alperen',    last: 'Şengün',      position: 'C',  bdlLast: 'Sengun', aliases: ['Alperen Sengun'] },
+    { first: 'Jabari',     last: 'Smith',       position: 'PF', aliases: ['Jabari Smith Jr.'] },
+    { first: 'Amen',       last: 'Thompson',    position: 'PF' },
+    { first: 'Reed',       last: 'Sheppard',    position: 'PG' },
   ],
   'Minnesota Timberwolves': [
-    { first: 'Anthony',   last: 'Edwards',      position: 'SG' },
-    { first: 'Rudy',      last: 'Gobert',       position: 'C'  },
-    { first: 'Naz',       last: 'Reid',         position: 'PF' },
-    { first: 'Jaden',     last: 'McDaniels',    position: 'SF' },
-    { first: 'Mike',      last: 'Conley',       position: 'PG' },
-    { first: 'Julius',    last: 'Randle',       position: 'PF' },
-    { first: 'Nickeil',   last: 'Alexander-Walker', position: 'SG', aliases: ['Nickeil Alexander Walker'] },
-    { first: 'Rob',       last: 'Dillingham',   position: 'PG' },
-    { first: 'Kyle',      last: 'Anderson',     position: 'SF' },
-    { first: 'Joe',       last: 'Ingles',       position: 'SF' },
-    { first: 'Donte',     last: 'DiVincenzo',   position: 'SG' },
-    { first: 'Shake',     last: 'Milton',       position: 'PG' },
-    { first: 'Jaylen',    last: 'Clark',        position: 'SG' },
-    { first: 'Naz',       last: 'Reid',         position: 'PF' },
-    { first: 'Jaden',     last: 'McDaniels',    position: 'SF' },
-    { first: 'Julius',    last: 'Randle',       position: 'PF' },
-    { first: 'Mike',      last: 'Conley',       position: 'PG' },
+    { first: 'Anthony',    last: 'Edwards',     position: 'SG' },
+    { first: 'Rudy',       last: 'Gobert',      position: 'C'  },
+    { first: 'Julius',     last: 'Randle',      position: 'PF' },
+    { first: 'Jaden',      last: 'McDaniels',   position: 'SF' },
+    { first: 'Donte',      last: 'DiVincenzo',  position: 'SG' },
   ],
 };
 
@@ -283,7 +204,7 @@ export async function POST(req: NextRequest) {
 
     // ── Step 1: Resolve BDL player IDs via name search ────────────────────────
     // Search for each hardcoded player by last name, match by full name.
-    // ~120 searches total → 20 concurrent = ~6 rounds × ~300ms = ~2s
+    // 60 players → concurrency=2, 1200ms gap → ~2 min total.
     log('Resolving BDL player IDs...');
 
     type NameEntry = { teamName: string; first: string; last: string; position: string };
@@ -403,41 +324,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Fallback injections for players BDL consistently rate-limits ─────────
-    // Only injects if the player isn't already present from live data.
-    // Stats are approximate; real BDL data is used when available.
-    const FALLBACK_INJECTIONS: Record<string, PlayerEntry[]> = {
-      'Minnesota Timberwolves': [
-        { bdlPlayerId: -1, name: 'Naz Reid',       position: 'PF', teamName: 'Minnesota Timberwolves', mpg: 24.0, ppg: 13.6, apg: 2.0, rpg: 6.5, eff: 12.5, gp: 65 },
-        { bdlPlayerId: -2, name: 'Jaden McDaniels', position: 'SF', teamName: 'Minnesota Timberwolves', mpg: 29.0, ppg: 13.5, apg: 1.5, rpg: 4.2, eff: 10.8, gp: 60 },
-        { bdlPlayerId: -3, name: 'Julius Randle',   position: 'PF', teamName: 'Minnesota Timberwolves', mpg: 31.0, ppg: 19.8, apg: 4.9, rpg: 8.1, eff: 18.5, gp: 55 },
-        { bdlPlayerId: -4, name: 'Mike Conley',     position: 'PG', teamName: 'Minnesota Timberwolves', mpg: 25.0, ppg: 9.5,  apg: 5.2, rpg: 2.5, eff: 9.2,  gp: 60 },
-      ],
-    };
-
-    for (const [teamName, fallbacks] of Object.entries(FALLBACK_INJECTIONS)) {
-      const arr = byTeam.get(teamName) ?? [];
-      for (const fb of fallbacks) {
-        if (!arr.some(p => p.name.toLowerCase() === fb.name.toLowerCase())) {
-          arr.push(fb);
-          log(`  [fallback] Injected ${fb.name} for ${teamName}`);
-        }
-      }
-      byTeam.set(teamName, arr);
-    }
-
-    // Sort each team by MPG desc, take top 9
+    // Sort each team by MPG desc, take top 5
     const finalPlayers: PlayerEntry[] = [];
     const teamBreakdown: Record<string, string[]> = {};
 
     for (const [teamName, players] of byTeam) {
       players.sort((a, b) => b.mpg - a.mpg || b.ppg - a.ppg);
-      const top9 = players.slice(0, 9);
-      byTeam.set(teamName, top9);
-      finalPlayers.push(...top9);
-      teamBreakdown[teamName] = top9.map(p => `${p.name} (${p.mpg.toFixed(1)}mpg, ${p.ppg}ppg)`);
-      log(`[${teamName}] top ${top9.length}: ${top9.map(p => p.name).join(', ')}`);
-      if (top9.length < 9) log(`  ⚠ Only ${top9.length} qualified players`);
+      const top5 = players.slice(0, 5);
+      byTeam.set(teamName, top5);
+      finalPlayers.push(...top5);
+      teamBreakdown[teamName] = top5.map(p => `${p.name} (${p.mpg.toFixed(1)}mpg, ${p.ppg}ppg)`);
+      log(`[${teamName}] ${top5.length} players: ${top5.map(p => p.name).join(', ')}`);
+      if (top5.length < 5) log(`  ⚠ Only ${top5.length} qualified players`);
     }
 
     log(`Total players selected: ${finalPlayers.length}`);
@@ -485,9 +383,9 @@ export async function POST(req: NextRequest) {
     for (const row of countRows ?? []) teamCountMap[row.team] = (teamCountMap[row.team] ?? 0) + 1;
     for (const [team, count] of Object.entries(teamCountMap)) log(`  ${team}: ${count}`);
 
-    const badTeams = Object.entries(teamCountMap).filter(([, c]) => c !== 9);
-    if (totalCount === 108 && badTeams.length === 0) {
-      log('✓ Laksh player universe successfully rebuilt: 108 players, 12 teams × 9 each.');
+    const badTeams = Object.entries(teamCountMap).filter(([, c]) => c !== 5);
+    if (totalCount === 60 && badTeams.length === 0) {
+      log('✓ Laksh player universe successfully rebuilt: 60 players, 12 teams × 5 each.');
     } else {
       log(`⚠ Done. Total: ${totalCount}. Issues: ${badTeams.map(([t, c]) => `${t}:${c}`).join(', ') || 'none'}`);
     }
@@ -497,7 +395,7 @@ export async function POST(req: NextRequest) {
       total_inserted: totalCount,
       team_breakdown: teamBreakdown,
       team_counts: teamCountMap,
-      validation_ok: totalCount === 108 && badTeams.length === 0,
+      validation_ok: totalCount === 60 && badTeams.length === 0,
       logs,
     });
 
