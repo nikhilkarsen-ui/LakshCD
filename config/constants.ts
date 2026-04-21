@@ -37,17 +37,18 @@ export const PRICING_V3: Record<string, number> = {
   live_boost_scale: 0.15,
 
   // ── Virtual Market Depth ──────────────────────────────────────────────────
-  // Base depth is substantially higher to resist sybil attacks.
-  base_depth: 80_000,               // $80k base (was $40k)
-  depth_season_boost: 2.0,          // grows to $240k by season end
+  // High depth means individual trades barely move the AMM spot.
+  // A $10k sell in a $200k market moves spot by only ~0.25% (quadratic).
+  base_depth: 200_000,              // $200k base (was $80k) — one trade barely dents it
+  depth_season_boost: 1.5,          // grows to $500k by season end
   depth_proximity_boost: 0.50,
   depth_proximity_decay: 0.12,
   depth_volume_base: 20_000,
-  min_depth: 50_000,                // floor: $50k (was $20k)
+  min_depth: 150_000,               // floor: $150k (was $50k)
 
   // ── Slippage ──────────────────────────────────────────────────────────────
-  slippage_exponent: 2.0,           // was 1.5 — quadratic not 1.5-power
-  max_price_impact_per_trade: 0.05, // was 8% — now capped at 5%
+  slippage_exponent: 2.0,           // quadratic — large trades cost more
+  max_price_impact_per_trade: 0.03, // max 3% AMM spot impact per trade (was 5%)
   // Circuit breaker: ±25% early season, tightens to ±8% at settlement
   // Widened from 15%/4% — beta seed prices are still calibrating against real stat-based FV
   max_fv_deviation_base: 0.25,

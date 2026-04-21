@@ -166,17 +166,14 @@ async function executeBuy(userId: string, req: TradeRequest, ip: string | null =
     await db.from('users').update({ last_trade_ip: ip }).eq('id', userId);
   }
 
-  // 13. Sync AMM pools + derived fields — CAS on pool_x to prevent race condition
-  // If another trade executed between our read and write, pool_x will have changed.
-  // The update matches no rows → trade conflict, user retries with fresh price.
-  const newSpot = ammPre.newPoolX > 0
-    ? parseFloat((ammPre.newPoolY / ammPre.newPoolX).toFixed(2))
-    : Number(player.current_price);
-
+  // 13. Sync AMM pools — CAS on pool_x to prevent race condition.
+  // NOTE: current_price is NOT updated here. The tick (every 5s) computes
+  // the blended price (20% AMM + 60% FV + 20% TWAP) and writes it.
+  // Writing the raw AMM spot here would bypass the blend and make individual
+  // buys appear to move the price far more than they actually should.
   const { data: poolUpdated } = await db.from('players').update({
     pool_x:        parseFloat(ammPre.newPoolX.toFixed(6)),
     pool_y:        parseFloat(ammPre.newPoolY.toFixed(4)),
-    current_price: newSpot,
     last_trade_at: new Date().toISOString(),
     last_fee_rate: feeRate,
     updated_at:    new Date().toISOString(),
@@ -346,15 +343,14 @@ async function executeSell(userId: string, req: TradeRequest, ip: string | null 
     await db.from('users').update({ last_trade_ip: ip }).eq('id', userId);
   }
 
-  // 10. Pool sync — CAS on pool_x to prevent race condition
-  const newSpot = ammNewX > 0
-    ? parseFloat((ammNewY / ammNewX).toFixed(2))
-    : Number(player.current_price);
-
+  // 10. Pool sync — CAS on pool_x to prevent race condition.
+  // NOTE: current_price is NOT updated here. The tick (every 5s) computes
+  // the blended price (20% AMM + 60% FV + 20% TWAP) and writes it.
+  // Writing the raw AMM spot here would bypass the blend and make individual
+  // sells appear to move the price far more than they actually should.
   const { data: sellPoolUpdated } = await db.from('players').update({
     pool_x:        parseFloat(ammNewX.toFixed(6)),
     pool_y:        parseFloat(ammNewY.toFixed(4)),
-    current_price: newSpot,
     last_trade_at: new Date().toISOString(),
     last_fee_rate: feeRate,
     updated_at:    new Date().toISOString(),
