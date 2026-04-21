@@ -185,7 +185,7 @@ export const LIVE_STATS = {
   tov:  -0.0005,   // -0.05% per turnover (was -0.10% — was 2.5× a point, now < 1 point)
 } as const;
 
-export const POLL = { prices: 5000, portfolio: 6000, leaderboard: 30000 } as const;
+export const POLL = { prices: 5000, portfolio: 15000, leaderboard: 30000 } as const;
 
 // Live game boost TTL — resets live_game_boost this long after the last stat event.
 export const BOOST_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours

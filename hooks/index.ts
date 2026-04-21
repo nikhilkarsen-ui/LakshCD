@@ -139,14 +139,19 @@ export function usePlayers() {
   const [marketCap, setMarketCap] = useState<number>(0);
   const [sparklines, setSparklines] = useState<Record<string, { price: number }[]>>({});
   const [loading, setLoading] = useState(true);
+  const lastSparklineFetch = useRef(0);
+
   const fetch_ = useCallback(async () => {
+    const now = Date.now();
+    const wantSparklines = now - lastSparklineFetch.current > 30_000;
     try {
-      const r = await fetch('/api/players');
+      const url = wantSparklines ? '/api/players' : '/api/players?no_sparklines=1';
+      const r = await fetch(url);
       if (!r.ok) { console.error(`Players API error: ${r.status} ${r.statusText}`); setLoading(false); return; }
       const d = await r.json();
       setPlayers(d.players || []);
       setMarketCap(d.market_cap ?? 0);
-      setSparklines(d.sparklines ?? {});
+      if (wantSparklines) { setSparklines(d.sparklines ?? {}); lastSparklineFetch.current = now; }
     } catch (error) { console.error('Failed to fetch players:', error); }
     finally { setLoading(false); }
   }, []);

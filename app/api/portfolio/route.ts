@@ -12,6 +12,10 @@ import { getApprovedAppUser, unauth } from '@/lib/auth';
 import { serverSupa } from '@/lib/supabase';
 export const dynamic = 'force-dynamic';
 
+// Module-level cache for total pool value — avoids two full-table scans on every poll.
+// Resets on cold start; that's fine since it recomputes within 90s.
+let poolTotalCache = { value: 0, at: 0 };
+
 const PLAYER_NUM_FIELDS = ['current_price', 'previous_price', 'price_change_24h', 'price_change_pct_24h', 'expected_value', 'expected_final_value', 'volatility', 'ppg', 'apg', 'rpg', 'efficiency'];
 
 export async function GET(req: NextRequest) {
@@ -74,21 +78,26 @@ export async function GET(req: NextRequest) {
   const totalValue = balance + totalHoldingsValue;
   const totalPnlPct = initial > 0 ? ((totalValue - initial) / initial) * 100 : 0;
 
-  // Pool share: sum all approved users' portfolio values to compute proportional share
-  const [{ data: allUsers }, { data: allPos }] = await Promise.all([
-    db.from('users').select('id, balance').eq('is_approved', true),
-    db.from('positions').select('user_id, shares_owned, player:players(current_price)').gt('shares_owned', 0),
-  ]);
-  const holdingsMap: Record<string, number> = {};
-  for (const p of (allPos || [])) {
-    const shares = Number((p as any).shares_owned);
-    const price  = Number((p as any).player?.current_price || 0);
-    if (shares > 0 && price > 0)
-      holdingsMap[(p as any).user_id] = (holdingsMap[(p as any).user_id] || 0) + shares * price;
+  // Pool share: module-level cache so the two full-table-scan queries don't run
+  // on every 15s portfolio poll. Recomputes at most once per 90 seconds.
+  let totalAllPortfolios = poolTotalCache.value;
+  if (Date.now() - poolTotalCache.at > 90_000) {
+    const [{ data: allUsers }, { data: allPos }] = await Promise.all([
+      db.from('users').select('id, balance').eq('is_approved', true),
+      db.from('positions').select('user_id, shares_owned, player:players(current_price)').gt('shares_owned', 0),
+    ]);
+    const holdingsMap: Record<string, number> = {};
+    for (const p of (allPos || [])) {
+      const shares = Number((p as any).shares_owned);
+      const price  = Number((p as any).player?.current_price || 0);
+      if (shares > 0 && price > 0)
+        holdingsMap[(p as any).user_id] = (holdingsMap[(p as any).user_id] || 0) + shares * price;
+    }
+    totalAllPortfolios = 0;
+    for (const u of (allUsers || []))
+      totalAllPortfolios += Number(u.balance) + (holdingsMap[u.id] || 0);
+    poolTotalCache = { value: totalAllPortfolios, at: Date.now() };
   }
-  let totalAllPortfolios = 0;
-  for (const u of (allUsers || []))
-    totalAllPortfolios += Number(u.balance) + (holdingsMap[u.id] || 0);
   const RAKE = 0.05;
   const prizePool = totalAllPortfolios * (1 - RAKE);
   const poolSharePct = totalAllPortfolios > 0 ? (totalValue / totalAllPortfolios) * 100 : 0;

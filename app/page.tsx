@@ -408,14 +408,26 @@ function Shell() {
   useEffect(() => {
     if (!user || !session?.access_token) { setApprovalState('unknown'); return; }
     let active = true;
+
+    // Use cached approval state for instant render, verify in background.
+    const cacheKey = `laksh_approved_${user.id}`;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached === 'approved') setApprovalState('approved');
+    } catch {}
+
     const checkApproval = async () => {
-      setApprovalState('unknown');
       try {
         const res = await fetch('/api/check-approval', { headers: { Authorization: `Bearer ${session.access_token}` } });
         const data = await res.json();
         if (!active) return;
         if (!res.ok) { setApprovalState('error'); return; }
-        if (data.approved) { setApprovalState('approved'); return; }
+        if (data.approved) {
+          try { sessionStorage.setItem(cacheKey, 'approved'); } catch {}
+          setApprovalState('approved');
+          return;
+        }
+        try { sessionStorage.removeItem(cacheKey); } catch {}
         setApprovalState('pending');
         router.push('/pending');
       } catch { if (!active) return; setApprovalState('error'); }

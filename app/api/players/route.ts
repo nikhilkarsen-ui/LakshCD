@@ -1,10 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { serverSupa } from '@/lib/supabase';
 export const dynamic = 'force-dynamic';
 
 const NUM_FIELDS = ['current_price','previous_price','price_change_24h','price_change_pct_24h','expected_value','expected_final_value','volatility','ppg','apg','rpg','efficiency','pool_x','pool_y'];
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const noSparklines = req.nextUrl.searchParams.get('no_sparklines') === '1';
   try {
     const db = serverSupa();
     const [{ data, error }, { data: positions }] = await Promise.all([
@@ -24,12 +25,10 @@ export async function GET() {
       return sum + shares * price;
     }, 0);
 
-    // Sparkline data — last 24h of tick snapshots per player (ticks fire simultaneously,
-    // so ordering DESC + limit gives evenly distributed recency across all players).
-    // Time filter prevents the global limit from shrinking per-player coverage as
-    // the price_history table grows over time.
+    // Sparkline data — last 24h of tick snapshots per player.
+    // Skipped when no_sparklines=1 (polled separately every 30s by the client).
     let sparklines: Record<string, { price: number }[]> = {};
-    if (players.length > 0) {
+    if (!noSparklines && players.length > 0) {
       const playerIds = players.map((p: any) => p.id);
       // Fetch 25h of history (48 ticks at 30-min cadence, with 1h buffer) then downsample to
       // 60 evenly-spaced points per player for the sparkline. Sending 48 × 80
