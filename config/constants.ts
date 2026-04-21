@@ -71,10 +71,10 @@ export const PRICING_V3: Record<string, number> = {
   drift_season_boost: 0.50,
   deviation_boost_threshold: 0.08,
   deviation_boost_multiplier: 0.50,
-  noise_scale: 0.35,                // reduced from 1.2 — noise no longer always hits cap
-  noise_min_vol: 0.02,              // reduced from 0.05 — ~$2/tick on $300 player at 1σ
+  noise_scale: 0.15,                // reduced from 0.35 — less random noise per tick (~$3 on $300 at 1σ)
+  noise_min_vol: 0.02,              // ~$2/tick on $300 player at 1σ
   noise_damp_decay: 0.15,
-  max_tick: 0.03,                   // reduced from 0.08 — max 3% per tick = $9 on $300
+  max_tick: 0.015,                  // reduced from 0.03 — max 1.5% per tick = $4.50 on $300
 
   // ── Dynamic Weight Adjustments ───────────────────────────────────────────
   target_vol: 0.015,
@@ -97,8 +97,8 @@ export const PRICING_V3: Record<string, number> = {
   // If price has risen >momentumThreshold% in the last momentumWindowMs,
   // buying is paused for momentumCooldownMs.
   momentum_window_ms: 30 * 60_000,   // look back 30 minutes
-  momentum_threshold: 0.08,          // 8% rise triggers cooldown
-  momentum_cooldown_ms: 10 * 60_000, // 10-minute buy cooldown
+  momentum_threshold: 0.20,          // 20% rise triggers cooldown (was 8% — too sensitive with natural drift)
+  momentum_cooldown_ms: 5 * 60_000,  // 5-minute buy cooldown (was 10 min)
 
   // ── Position concentration limit ─────────────────────────────────────────
   // No account can hold shares worth more than this fraction of total market cap.
@@ -113,7 +113,7 @@ export const ANTI_MANIP_V3 = {
   pressure_halflife_ms: 30 * 60_000,     // 30-minute half-life (was 5-min hard reset)
   pressure_lookback_ms: 4 * 60 * 60_000, // look back 4 hours of trade history
   max_pressure_score: 15_000,            // $15k decayed pressure → max penalty
-  max_fill_penalty: 0.12,                // was 8% — now up to 12%
+  max_fill_penalty: 0.05,                // max 5% fill penalty (was 12% — too punitive for normal users)
 
   // Wash trading: longer window + lower threshold
   wash_window_ms: 30 * 60_000,           // was 5 min — now 30 min

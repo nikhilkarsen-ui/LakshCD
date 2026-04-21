@@ -471,7 +471,7 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
         <Card>
           <Label>Trade</Label>
           <p className="text-[11px] text-lk-dim mb-3">
-            Enter dollar amount. Shares held at season end count toward your pool payout — the higher your portfolio value, the larger your slice.
+            Orders fill within ~5 seconds at the live market price. Shares held at season end count toward your pool payout.
           </p>
           <div className="relative mb-3">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lk-dim text-sm">$</span>
@@ -493,8 +493,8 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
 
           {hasPosition && (
             <button onClick={doSellAll} disabled={executing}
-              className="w-full mb-3 py-2 rounded-lg border border-lk-red/30 text-lk-red text-xs hover:bg-lk-red/5 transition-colors font-medium disabled:opacity-40">
-              {executing ? '...' : `Sell all ${sharesOwned.toFixed(4)} shares ≈ ${fmt(maxSellDollars)}`}
+              className="w-full mb-3 py-3 rounded-xl bg-lk-red/10 border border-lk-red/40 text-lk-red text-sm font-semibold hover:bg-lk-red/20 transition-colors disabled:opacity-40 active:scale-95">
+              {executing ? 'Selling...' : `Sell All · ${sharesOwned.toFixed(4)} shares ≈ ${fmt(maxSellDollars)}`}
             </button>
           )}
 
@@ -527,7 +527,7 @@ export default function PlayerDetail({ playerId, onBack }: { playerId: string; o
                   </div>
                   {preview.fillPenaltyWarning && (
                     <div className="text-yellow-500 pt-1 text-[10px]">
-                      ⚠ High recent activity — actual shares received may be slightly fewer
+                      ⚠ Recent same-direction trades detected — your effective fill price may be up to 5% worse than shown
                     </div>
                   )}
                 </>
