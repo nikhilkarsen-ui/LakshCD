@@ -188,6 +188,9 @@ function LandingPage({ onStart }: { onStart: () => void }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <a href="mailto:nikhil@laksh.app?subject=Internship%20Application&body=Hi%20Nikhil%2C%0A%0AI%27m%20interested%20in%20interning%20at%20Laksh.%20Please%20find%20my%20resume%20and%20cover%20letter%20attached." className="hidden sm:inline-flex rounded-full px-5 py-2.5 text-sm font-semibold text-lk-dim transition hover:text-white">
+                Careers
+              </a>
               <a href="/waitlist" className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10">
                 Join Waitlist
               </a>
