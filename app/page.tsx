@@ -384,6 +384,23 @@ function LandingPage({ onStart }: { onStart: () => void }) {
               Sign In
             </button>
           </section>
+
+          {/* ── Careers ── */}
+          <section className="py-20 border-t border-white/5">
+            <div className="max-w-2xl mx-auto text-center px-6">
+              <div className="text-[10px] uppercase tracking-[0.3em] text-lk-accent mb-4">Careers</div>
+              <h2 className="text-3xl font-black mb-4">Work on Laksh</h2>
+              <p className="text-lk-dim text-sm leading-relaxed mb-8">
+                We're a small team building something new in sports finance. If you want to work on pricing models, real-time data pipelines, or product — send us a note.
+              </p>
+              <a
+                href="mailto:nikhil@laksh.app?subject=Internship%20Application&body=Hi%20Nikhil%2C%0A%0AI%27m%20interested%20in%20interning%20at%20Laksh.%20Please%20find%20my%20resume%20and%20cover%20letter%20attached."
+                className="inline-flex items-center gap-2 rounded-full border border-lk-accent/40 bg-lk-accent/10 px-8 py-3.5 text-sm font-semibold text-lk-accent transition hover:bg-lk-accent/20"
+              >
+                Send resume + cover letter to nikhil@laksh.app
+              </a>
+            </div>
+          </section>
         </main>
 
         <footer className="border-t border-white/8 py-8 text-center text-xs text-lk-muted">
